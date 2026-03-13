@@ -8,19 +8,18 @@ use Closure;
 use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
 use Override;
+use TarranJones\LaravelPaginationAggregates\Resolvers\DirectAggregateResolver;
+use TarranJones\LaravelPaginationAggregates\Resolvers\PageAggregateResolver;
+use TarranJones\LaravelPaginationAggregates\Resolvers\RelationAggregateResolver;
 
 trait AggregatesPaginator
 {
     protected Builder $builder;
 
-    /**
-     * @var array<int, array{type: string, relations: mixed, column: Expression|string|null, function: string|null, alias: string, callback: Closure|null}>
-     */
+    /** @var AggregateInstruction[] */
     protected array $aggregateInstructions = [];
 
-    /**
-     * @var array<string, mixed>|null
-     */
+    /** @var array<string, mixed>|null */
     protected ?array $aggregateValues = null;
 
     #[Override]
@@ -31,116 +30,116 @@ trait AggregatesPaginator
 
     public function withTotalCount(Expression|string $column = '*', ?Closure $callback = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'count');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'count');
 
-        return $this->storeDirectAggregate('count', $col, $alias, $callback);
+        return $this->storeInstruction('direct', 'count', $alias, $col, null, $callback);
     }
 
     public function withTotalMax(Expression|string $column, ?Closure $callback = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'max');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'max');
 
-        return $this->storeDirectAggregate('max', $col, $alias, $callback);
+        return $this->storeInstruction('direct', 'max', $alias, $col, null, $callback);
     }
 
     public function withTotalMin(Expression|string $column, ?Closure $callback = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'min');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'min');
 
-        return $this->storeDirectAggregate('min', $col, $alias, $callback);
+        return $this->storeInstruction('direct', 'min', $alias, $col, null, $callback);
     }
 
     public function withTotalSum(Expression|string $column, ?Closure $callback = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'sum');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'sum');
 
-        return $this->storeDirectAggregate('sum', $col, $alias, $callback);
+        return $this->storeInstruction('direct', 'sum', $alias, $col, null, $callback);
     }
 
     public function withTotalAvg(Expression|string $column, ?Closure $callback = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'avg');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'avg');
 
-        return $this->storeDirectAggregate('avg', $col, $alias, $callback);
+        return $this->storeInstruction('direct', 'avg', $alias, $col, null, $callback);
     }
 
     public function withTotalExists(?Closure $callback = null, string $alias = 'total_exists'): static
     {
-        return $this->storeDirectAggregate('exists', null, $alias, $callback);
+        return $this->storeInstruction('direct', 'exists', $alias, null, null, $callback);
     }
 
     public function withTotalCountOf(string|array ...$relations): static
     {
         if (count($relations) === 1 && is_array($relations[0])) {
-            return $this->withAggregate($relations[0], '*', 'count');
+            return $this->storeRelation($relations[0], '*', 'count');
         }
 
-        return $this->withAggregate($relations, '*', 'count');
+        return $this->storeRelation($relations, '*', 'count');
     }
 
     public function withTotalMaxOf(string|array $relation, Expression|string $column): static
     {
-        return $this->withAggregate($relation, $column, 'max');
+        return $this->storeRelation($relation, $column, 'max');
     }
 
     public function withTotalMinOf(string|array $relation, Expression|string $column): static
     {
-        return $this->withAggregate($relation, $column, 'min');
+        return $this->storeRelation($relation, $column, 'min');
     }
 
     public function withTotalSumOf(string|array $relation, Expression|string $column): static
     {
-        return $this->withAggregate($relation, $column, 'sum');
+        return $this->storeRelation($relation, $column, 'sum');
     }
 
     public function withTotalAvgOf(string|array $relation, Expression|string $column): static
     {
-        return $this->withAggregate($relation, $column, 'avg');
+        return $this->storeRelation($relation, $column, 'avg');
     }
 
     public function withTotalExistsOf(string|array $relation): static
     {
-        return $this->withAggregate($relation, '*', 'exists');
+        return $this->storeRelation($relation, '*', 'exists');
     }
 
     public function withPageCount(Expression|string $column = '*', ?Closure $filter = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'count', 'page');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'count', 'page');
 
-        return $this->storePageAggregate('count', $col, $alias, $filter);
+        return $this->storeInstruction('page', 'count', $alias, $col, null, $filter);
     }
 
     public function withPageMax(Expression|string $column, ?Closure $filter = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'max', 'page');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'max', 'page');
 
-        return $this->storePageAggregate('max', $col, $alias, $filter);
+        return $this->storeInstruction('page', 'max', $alias, $col, null, $filter);
     }
 
     public function withPageMin(Expression|string $column, ?Closure $filter = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'min', 'page');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'min', 'page');
 
-        return $this->storePageAggregate('min', $col, $alias, $filter);
+        return $this->storeInstruction('page', 'min', $alias, $col, null, $filter);
     }
 
     public function withPageSum(Expression|string $column, ?Closure $filter = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'sum', 'page');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'sum', 'page');
 
-        return $this->storePageAggregate('sum', $col, $alias, $filter);
+        return $this->storeInstruction('page', 'sum', $alias, $col, null, $filter);
     }
 
     public function withPageAvg(Expression|string $column, ?Closure $filter = null): static
     {
-        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'avg', 'page');
+        ['column' => $col, 'alias' => $alias] = $this->aliasResolver()->forDirect($column, 'avg', 'page');
 
-        return $this->storePageAggregate('avg', $col, $alias, $filter);
+        return $this->storeInstruction('page', 'avg', $alias, $col, null, $filter);
     }
 
     public function withPageExists(?Closure $filter = null, string $alias = 'page_exists'): static
     {
-        return $this->storePageAggregate('exists', null, $alias, $filter);
+        return $this->storeInstruction('page', 'exists', $alias, null, null, $filter);
     }
 
     protected function appendAggregateData(array $payload): array
@@ -169,158 +168,59 @@ trait AggregatesPaginator
         }
 
         if ($this->aggregateInstructions === []) {
-            $this->aggregateValues = [];
+            return $this->aggregateValues = [];
+        }
 
-            return $this->aggregateValues;
+        $byType = [];
+
+        foreach ($this->aggregateInstructions as $instruction) {
+            $byType[$instruction->type][] = $instruction;
         }
 
         $meta = [];
 
-        $pageInstructions = array_values(array_filter($this->aggregateInstructions, fn (array $i): bool => $i['type'] === 'page'));
-        $relationInstructions = array_values(array_filter($this->aggregateInstructions, fn (array $i): bool => $i['type'] === 'relation'));
-        $directInstructions = array_values(array_filter($this->aggregateInstructions, fn (array $i): bool => $i['type'] === 'direct'));
-
-        foreach ($pageInstructions as $instruction) {
-            $col = $instruction['column'];
-            $alias = $instruction['alias'];
-            $collection = $instruction['callback']
-                ? $this->getCollection()->filter($instruction['callback'])
-                : $this->getCollection();
-
-            $meta[$alias] = match ($instruction['function']) {
-                'count' => $collection->count(),
-                'max' => $collection->max($col),
-                'min' => $collection->min($col),
-                'sum' => $collection->sum($col),
-                'avg' => $collection->avg($col),
-                'exists' => $collection->isNotEmpty(),
-                default => null,
-            };
+        if (isset($byType['page'])) {
+            $meta = array_merge($meta, (new PageAggregateResolver)->resolve($byType['page'], $this->getCollection()));
         }
 
-        if ($relationInstructions !== []) {
-            $query = clone $this->builder;
-
-            $model = $query->getModel();
-
-            $query->select($model->getQualifiedKeyName());
-
-            // For avg, we compute sum+count per model to derive the true global average,
-            // avoiding the incorrect average-of-averages result.
-            $avgInternalAliases = [];
-
-            foreach ($relationInstructions as $instruction) {
-                if ($instruction['function'] === 'avg') {
-                    $baseRelation = is_string($instruction['relations'])
-                        ? trim(preg_split('/\s+as\s+/i', $instruction['relations'], 2)[0])
-                        : $instruction['relations'];
-
-                    $sumAttr = $instruction['alias'].'__sum';
-                    $countAttr = $instruction['alias'].'__cnt';
-
-                    $sumRelation = is_string($baseRelation) ? $baseRelation.' as '.$sumAttr : $baseRelation;
-                    $countRelation = is_string($baseRelation) ? $baseRelation.' as '.$countAttr : $baseRelation;
-
-                    $query->withAggregate($sumRelation, $instruction['column'], 'sum');
-                    $query->withAggregate($countRelation, $instruction['column'], 'count');
-
-                    $avgInternalAliases[$instruction['alias']] = [$sumAttr, $countAttr];
-                } else {
-                    $query->withAggregate($instruction['relations'], $instruction['column'], $instruction['function']);
-                }
-            }
-
-            $results = $query->get();
-
-            foreach ($relationInstructions as $instruction) {
-                $alias = $instruction['alias'];
-
-                if ($results->isEmpty()) {
-                    $meta[$alias] = match ($instruction['function']) {
-                        'count', 'sum' => 0,
-                        default => null,
-                    };
-
-                    continue;
-                }
-
-                if ($instruction['function'] === 'avg') {
-                    [$sumAttr, $countAttr] = $avgInternalAliases[$alias];
-                    $totalSum = $results->sum(fn ($m): float => (float) ($m->getAttribute($sumAttr) ?? 0));
-                    $totalCount = $results->sum(fn ($m): int => (int) ($m->getAttribute($countAttr) ?? 0));
-                    $meta[$alias] = $totalCount > 0 ? $totalSum / $totalCount : null;
-                } else {
-                    $values = $results->map(fn ($m) => $m->getAttribute($alias));
-                    $meta[$alias] = match ($instruction['function']) {
-                        'count', 'sum' => $values->sum(),
-                        'max' => $values->max(),
-                        'min' => $values->min(),
-                        'exists' => (bool) $values->filter()->count(),
-                        default => null,
-                    };
-                }
-            }
+        if (isset($byType['relation'])) {
+            $meta = array_merge($meta, (new RelationAggregateResolver)->resolve($byType['relation'], $this->builder));
         }
 
-        foreach ($directInstructions as $instruction) {
-            $alias = $instruction['alias'];
-            $column = $instruction['column'];
-
-            if ($instruction['callback'] === null) {
-                // LengthAwarePaginator: total already computed, no query needed
-                if (method_exists($this, 'total')) {
-                    if ($instruction['function'] === 'count' && $column === '*') {
-                        $meta[$alias] = $this->total();
-
-                        continue;
-                    }
-                    if ($instruction['function'] === 'exists') {
-                        $meta[$alias] = $this->total() > 0;
-
-                        continue;
-                    }
-                }
-
-                // Single page: all rows are in the collection, no query needed
-                if ($this->isSinglePage()) {
-                    $collection = $this->getCollection();
-                    $meta[$alias] = match ($instruction['function']) {
-                        'count' => $collection->count(),
-                        'max' => $collection->max($column),
-                        'min' => $collection->min($column),
-                        'sum' => $collection->sum($column),
-                        'avg' => $collection->avg($column),
-                        'exists' => $collection->isNotEmpty(),
-                        default => null,
-                    };
-
-                    continue;
-                }
-            }
-
-            $query = clone $this->builder;
-
-            if ($instruction['callback'] !== null) {
-                ($instruction['callback'])($query);
-            }
-
-            $meta[$alias] = match ($instruction['function']) {
-                'count' => $query->count(),
-                'max' => $query->max($column),
-                'min' => $query->min($column),
-                'sum' => $query->sum($column),
-                'avg' => $query->avg($column),
-                'exists' => $query->exists(),
-                default => null,
-            };
+        if (isset($byType['direct'])) {
+            $total = method_exists($this, 'total') ? $this->total() : null;
+            $meta = array_merge($meta, (new DirectAggregateResolver)->resolve(
+                $byType['direct'],
+                $this->builder,
+                $total,
+                $this->isSinglePage(),
+                $this->getCollection(),
+            ));
         }
 
-        $this->aggregateValues = $meta;
-
-        return $this->aggregateValues;
+        return $this->aggregateValues = $meta;
     }
 
-    protected function withAggregate(string|array $relations, Expression|string $column, ?string $function): static
+    private function aliasResolver(): AliasResolver
+    {
+        return new AliasResolver($this->builder->getQuery()->getGrammar());
+    }
+
+    private function storeInstruction(
+        string $type,
+        string $function,
+        string $alias,
+        string|null $column,
+        string|array|null $relations,
+        ?Closure $callback,
+    ): static {
+        $this->aggregateInstructions[] = new AggregateInstruction($type, $function, $alias, $column, $relations, $callback);
+        $this->aggregateValues = null;
+
+        return $this;
+    }
+
+    private function storeRelation(string|array $relations, Expression|string $column, string $function): static
     {
         if (is_array($relations)) {
             foreach ($relations as $name => $constraints) {
@@ -332,111 +232,17 @@ trait AggregatesPaginator
                     $relationPayload = [$name => $constraints];
                 }
 
-                $this->aggregateInstructions[] = [
-                    'type' => 'relation',
-                    'relations' => $relationPayload,
-                    'column' => $column,
-                    'function' => $function,
-                    'alias' => $this->resolveAggregateAlias($relation, $column, $function),
-                    'callback' => null,
-                ];
+                $alias = $this->aliasResolver()->forRelation($relation, $column, $function);
+                $this->aggregateInstructions[] = new AggregateInstruction('relation', $function, $alias, $column, $relationPayload, null);
             }
         } else {
-            $this->aggregateInstructions[] = [
-                'type' => 'relation',
-                'relations' => $relations,
-                'column' => $column,
-                'function' => $function,
-                'alias' => $this->resolveAggregateAlias($relations, $column, $function),
-                'callback' => null,
-            ];
+            $alias = $this->aliasResolver()->forRelation($relations, $column, $function);
+            $this->aggregateInstructions[] = new AggregateInstruction('relation', $function, $alias, $column, $relations, null);
         }
 
         $this->aggregateValues = null;
 
         return $this;
-    }
-
-    protected function storeDirectAggregate(string $function, ?string $column, string $alias, ?Closure $callback = null): static
-    {
-        $this->aggregateInstructions[] = [
-            'type' => 'direct',
-            'relations' => null,
-            'column' => $column,
-            'function' => $function,
-            'alias' => $alias,
-            'callback' => $callback,
-        ];
-
-        $this->aggregateValues = null;
-
-        return $this;
-    }
-
-    private function storePageAggregate(string $function, ?string $column, string $alias, ?Closure $callback = null): static
-    {
-        $this->aggregateInstructions[] = [
-            'type' => 'page',
-            'relations' => null,
-            'column' => $column,
-            'function' => $function,
-            'alias' => $alias,
-            'callback' => $callback,
-        ];
-
-        $this->aggregateValues = null;
-
-        return $this;
-    }
-
-    /**
-     * @return array{column: string, alias: string}
-     */
-    protected function resolveDirectAlias(Expression|string $column, string $function, string $prefix = 'total'): array
-    {
-        if ($column instanceof Expression) {
-            $col = (string) $column->getValue($this->builder->getQuery()->getGrammar());
-            $snaked = strtolower((string) preg_replace('/[^[:alnum:]_]/u', '_', $col));
-
-            return ['column' => $col, 'alias' => $prefix.'_'.$function.'_'.$snaked];
-        }
-
-        $segments = preg_split('/\s+as\s+/i', $column, 2);
-
-        if (count($segments) === 2) {
-            return ['column' => trim($segments[0]), 'alias' => trim($segments[1])];
-        }
-
-        $col = trim($column);
-        $snaked = strtolower((string) preg_replace('/[^[:alnum:]_]/u', '_', $col));
-
-        if ($function === 'count' && $col === '*') {
-            return ['column' => $col, 'alias' => $prefix.'_count'];
-        }
-
-        return ['column' => $col, 'alias' => $prefix.'_'.$function.'_'.$snaked];
-    }
-
-    protected function resolveAggregateAlias(string $relation, Expression|string $column, ?string $function): string
-    {
-        $segments = explode(' ', $relation);
-
-        if (count($segments) === 3 && strtolower($segments[1]) === 'as') {
-            return $segments[2];
-        }
-
-        $columnValue = $column;
-
-        if ($column instanceof Expression) {
-            $columnValue = $column->getValue($this->builder->getQuery()->getGrammar());
-        }
-
-        $columnValue = strtolower((string) $columnValue);
-
-        $raw = sprintf('%s %s %s', $relation, $function, $columnValue);
-        $sanitized = trim((string) preg_replace(['/[^[:alnum:][:space:]_]+/u', '/\s+/'], ['_', ' '], $raw), '_');
-
-        return str($sanitized)->snake()->value();
     }
 
     private function isSinglePage(): bool
