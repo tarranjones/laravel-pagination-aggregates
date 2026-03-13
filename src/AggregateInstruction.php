@@ -17,6 +17,6 @@ readonly class AggregateInstruction
         public string $alias,
         public Expression|string|null $column,
         public string|array|null $relations,
-        public Closure|null $callback,
+        public ?Closure $callback,
     ) {}
 }

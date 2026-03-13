@@ -210,7 +210,7 @@ trait AggregatesPaginator
         string $type,
         string $function,
         string $alias,
-        string|null $column,
+        ?string $column,
         string|array|null $relations,
         ?Closure $callback,
     ): static {
