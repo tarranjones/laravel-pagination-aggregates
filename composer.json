@@ -1,0 +1,62 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "tarranjones/laravel-pagination-aggregates",
+    "type": "library",
+    "description": "Attach aggregate metadata to Laravel paginated responses",
+    "keywords": [
+        "laravel",
+        "pagination",
+        "aggregates",
+        "eloquent"
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "laravel/framework": "^12.0"
+    },
+    "require-dev": {
+        "driftingly/rector-laravel": "^2.0",
+        "laravel/pint": "^1.24",
+        "nunomaduro/collision": "^8.6",
+        "orchestra/testbench": "^10.0",
+        "pestphp/pest": "^4.4",
+        "pestphp/pest-plugin-laravel": "^4.1",
+        "rector/rector": "^2.0",
+        "roave/security-advisories": "dev-latest"
+    },
+    "autoload": {
+        "psr-4": {
+            "TarranJones\\LaravelPaginationAggregates\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": [
+            "vendor/bin/pest --compact"
+        ],
+        "rector": [
+            "vendor/bin/rector"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "TarranJones\\LaravelPaginationAggregates\\PaginationAggregatesServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
