@@ -230,7 +230,7 @@ it('withPageCount with filter closure counts matching items on the page', functi
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithTotals(10)
-        ->withPageCount('* as high_votes', fn (Comment $c) => $c->votes > 3);
+        ->withPageCount('* as high_votes', fn (Comment $c): bool => $c->votes > 3);
 
     $payload = $paginator->toArray();
 

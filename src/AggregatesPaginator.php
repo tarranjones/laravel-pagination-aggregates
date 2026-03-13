@@ -212,7 +212,7 @@ trait AggregatesPaginator
             foreach ($relationInstructions as $instruction) {
                 if ($instruction['function'] === 'avg') {
                     $baseRelation = is_string($instruction['relations'])
-                        ? trim((string) preg_split('/\s+as\s+/i', $instruction['relations'], 2)[0])
+                        ? trim(preg_split('/\s+as\s+/i', $instruction['relations'], 2)[0])
                         : $instruction['relations'];
 
                     $sumAttr = $instruction['alias'].'__sum';
@@ -246,8 +246,8 @@ trait AggregatesPaginator
 
                 if ($instruction['function'] === 'avg') {
                     [$sumAttr, $countAttr] = $avgInternalAliases[$alias];
-                    $totalSum = $results->sum(fn ($m) => (float) ($m->getAttribute($sumAttr) ?? 0));
-                    $totalCount = $results->sum(fn ($m) => (int) ($m->getAttribute($countAttr) ?? 0));
+                    $totalSum = $results->sum(fn ($m): float => (float) ($m->getAttribute($sumAttr) ?? 0));
+                    $totalCount = $results->sum(fn ($m): int => (int) ($m->getAttribute($countAttr) ?? 0));
                     $meta[$alias] = $totalCount > 0 ? $totalSum / $totalCount : null;
                 } else {
                     $values = $results->map(fn ($m) => $m->getAttribute($alias));
