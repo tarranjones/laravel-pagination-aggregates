@@ -11,27 +11,27 @@ class PaginatorFactory
 {
     public static function paginate(
         Builder $builder,
-        int|null $perPage = null,
+        ?int $perPage = null,
         array $columns = ['*'],
         string $pageName = 'page',
-        int|null $page = null,
+        ?int $page = null,
     ): AggregateLengthAwarePaginator {
         return new AggregateLengthAwarePaginator($builder, $perPage, $columns, $pageName, $page);
     }
 
     public static function simplePaginate(
         Builder $builder,
-        int|null $perPage = null,
+        ?int $perPage = null,
         array $columns = ['*'],
         string $pageName = 'page',
-        int|null $page = null,
+        ?int $page = null,
     ): AggregatePaginator {
         return new AggregatePaginator($builder, $perPage, $columns, $pageName, $page);
     }
 
     public static function cursorPaginate(
         Builder $builder,
-        int|null $perPage = null,
+        ?int $perPage = null,
         array $columns = ['*'],
         string $cursorName = 'cursor',
         Cursor|string|null $cursor = null,

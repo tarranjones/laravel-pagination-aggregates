@@ -13,10 +13,10 @@ class AggregatePaginator extends Paginator
 
     public function __construct(
         Builder $builder,
-        int|null $perPage = null,
+        ?int $perPage = null,
         array $columns = ['*'],
         string $pageName = 'page',
-        int|null $page = null,
+        ?int $page = null,
     ) {
         $this->builder = clone $builder;
         $paginator = $builder->simplePaginate($perPage, $columns, $pageName, $page);

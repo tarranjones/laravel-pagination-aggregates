@@ -103,6 +103,46 @@ trait AggregatesPaginator
         return $this->withAggregate($relation, '*', 'exists');
     }
 
+    public function withPageCount(Expression|string $column = '*', ?Closure $filter = null): static
+    {
+        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'count', 'page');
+
+        return $this->storePageAggregate('count', $col, $alias, $filter);
+    }
+
+    public function withPageMax(Expression|string $column, ?Closure $filter = null): static
+    {
+        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'max', 'page');
+
+        return $this->storePageAggregate('max', $col, $alias, $filter);
+    }
+
+    public function withPageMin(Expression|string $column, ?Closure $filter = null): static
+    {
+        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'min', 'page');
+
+        return $this->storePageAggregate('min', $col, $alias, $filter);
+    }
+
+    public function withPageSum(Expression|string $column, ?Closure $filter = null): static
+    {
+        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'sum', 'page');
+
+        return $this->storePageAggregate('sum', $col, $alias, $filter);
+    }
+
+    public function withPageAvg(Expression|string $column, ?Closure $filter = null): static
+    {
+        ['column' => $col, 'alias' => $alias] = $this->resolveDirectAlias($column, 'avg', 'page');
+
+        return $this->storePageAggregate('avg', $col, $alias, $filter);
+    }
+
+    public function withPageExists(?Closure $filter = null, string $alias = 'page_exists'): static
+    {
+        return $this->storePageAggregate('exists', null, $alias, $filter);
+    }
+
     protected function appendAggregateData(array $payload): array
     {
         $aggregates = $this->resolveAggregateMeta();
@@ -136,8 +176,27 @@ trait AggregatesPaginator
 
         $meta = [];
 
+        $pageInstructions = array_values(array_filter($this->aggregateInstructions, fn (array $i): bool => $i['type'] === 'page'));
         $relationInstructions = array_values(array_filter($this->aggregateInstructions, fn (array $i): bool => $i['type'] === 'relation'));
         $directInstructions = array_values(array_filter($this->aggregateInstructions, fn (array $i): bool => $i['type'] === 'direct'));
+
+        foreach ($pageInstructions as $instruction) {
+            $col = $instruction['column'];
+            $alias = $instruction['alias'];
+            $collection = $instruction['callback']
+                ? $this->getCollection()->filter($instruction['callback'])
+                : $this->getCollection();
+
+            $meta[$alias] = match ($instruction['function']) {
+                'count' => $collection->count(),
+                'max' => $collection->max($col),
+                'min' => $collection->min($col),
+                'sum' => $collection->sum($col),
+                'avg' => $collection->avg($col),
+                'exists' => $collection->isNotEmpty(),
+                default => null,
+            };
+        }
 
         if ($relationInstructions !== []) {
             $query = clone $this->builder;
@@ -181,6 +240,7 @@ trait AggregatesPaginator
                         'count', 'sum' => 0,
                         default => null,
                     };
+
                     continue;
                 }
 
@@ -203,14 +263,46 @@ trait AggregatesPaginator
         }
 
         foreach ($directInstructions as $instruction) {
+            $alias = $instruction['alias'];
+            $column = $instruction['column'];
+
+            if ($instruction['callback'] === null) {
+                // LengthAwarePaginator: total already computed, no query needed
+                if (method_exists($this, 'total')) {
+                    if ($instruction['function'] === 'count' && $column === '*') {
+                        $meta[$alias] = $this->total();
+
+                        continue;
+                    }
+                    if ($instruction['function'] === 'exists') {
+                        $meta[$alias] = $this->total() > 0;
+
+                        continue;
+                    }
+                }
+
+                // Single page: all rows are in the collection, no query needed
+                if ($this->isSinglePage()) {
+                    $collection = $this->getCollection();
+                    $meta[$alias] = match ($instruction['function']) {
+                        'count' => $collection->count(),
+                        'max' => $collection->max($column),
+                        'min' => $collection->min($column),
+                        'sum' => $collection->sum($column),
+                        'avg' => $collection->avg($column),
+                        'exists' => $collection->isNotEmpty(),
+                        default => null,
+                    };
+
+                    continue;
+                }
+            }
+
             $query = clone $this->builder;
 
             if ($instruction['callback'] !== null) {
                 ($instruction['callback'])($query);
             }
-
-            $alias = $instruction['alias'];
-            $column = $instruction['column'];
 
             $meta[$alias] = match ($instruction['function']) {
                 'count' => $query->count(),
@@ -281,16 +373,32 @@ trait AggregatesPaginator
         return $this;
     }
 
+    private function storePageAggregate(string $function, ?string $column, string $alias, ?Closure $callback = null): static
+    {
+        $this->aggregateInstructions[] = [
+            'type' => 'page',
+            'relations' => null,
+            'column' => $column,
+            'function' => $function,
+            'alias' => $alias,
+            'callback' => $callback,
+        ];
+
+        $this->aggregateValues = null;
+
+        return $this;
+    }
+
     /**
      * @return array{column: string, alias: string}
      */
-    protected function resolveDirectAlias(Expression|string $column, string $function): array
+    protected function resolveDirectAlias(Expression|string $column, string $function, string $prefix = 'total'): array
     {
         if ($column instanceof Expression) {
             $col = (string) $column->getValue($this->builder->getQuery()->getGrammar());
             $snaked = strtolower((string) preg_replace('/[^[:alnum:]_]/u', '_', $col));
 
-            return ['column' => $col, 'alias' => 'total_'.$function.'_'.$snaked];
+            return ['column' => $col, 'alias' => $prefix.'_'.$function.'_'.$snaked];
         }
 
         $segments = preg_split('/\s+as\s+/i', $column, 2);
@@ -303,10 +411,10 @@ trait AggregatesPaginator
         $snaked = strtolower((string) preg_replace('/[^[:alnum:]_]/u', '_', $col));
 
         if ($function === 'count' && $col === '*') {
-            return ['column' => $col, 'alias' => 'total_count'];
+            return ['column' => $col, 'alias' => $prefix.'_count'];
         }
 
-        return ['column' => $col, 'alias' => 'total_'.$function.'_'.$snaked];
+        return ['column' => $col, 'alias' => $prefix.'_'.$function.'_'.$snaked];
     }
 
     protected function resolveAggregateAlias(string $relation, Expression|string $column, ?string $function): string
@@ -329,5 +437,17 @@ trait AggregatesPaginator
         $sanitized = trim((string) preg_replace(['/[^[:alnum:][:space:]_]+/u', '/\s+/'], ['_', ' '], $raw), '_');
 
         return str($sanitized)->snake()->value();
+    }
+
+    private function isSinglePage(): bool
+    {
+        if (method_exists($this, 'lastPage')) {        // LengthAwarePaginator
+            return $this->lastPage() === 1;
+        }
+        if (method_exists($this, 'currentPage')) {     // Paginator (simple)
+            return $this->currentPage() === 1 && ! $this->hasMorePages();
+        }
+
+        return $this->onFirstPage() && ! $this->hasMorePages(); // CursorPaginator
     }
 }

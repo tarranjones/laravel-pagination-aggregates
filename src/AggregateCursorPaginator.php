@@ -14,7 +14,7 @@ class AggregateCursorPaginator extends CursorPaginator
 
     public function __construct(
         Builder $builder,
-        int|null $perPage = null,
+        ?int $perPage = null,
         array $columns = ['*'],
         string $cursorName = 'cursor',
         Cursor|string|null $cursor = null,
