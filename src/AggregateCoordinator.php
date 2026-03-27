@@ -126,7 +126,7 @@ class AggregateCoordinator
         if ($relations === null) {
             $alias = $as ?? $this->aliasResolver()->forColumn($column, $function);
 
-            $storedColumn = ($as !== null && is_string($column))
+            $storedColumn = is_string($column)
                 ? AliasResolver::stripAlias($column)
                 : $column;
 
