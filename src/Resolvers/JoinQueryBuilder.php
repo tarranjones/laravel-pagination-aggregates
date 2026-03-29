@@ -20,149 +20,171 @@ class JoinQueryBuilder
         $query = clone $builder;
         $query->select($query->getModel()->getQualifiedKeyName());
 
-        $existsCols = [];
+        $existsCols        = [];
         $joinAliasCounters = [];
 
         foreach ($groups as $group) {
-            // ─── Base query aggregates: use subquery with CROSS JOIN ───────
-            //
-            // Base query aggregates use a subquery that computes aggregates over the
-            // filtered dataset, then CROSS JOIN to add those values to every row
             if ($group->type === 'base') {
-                $jAlias = $this->joinAlias('base', $joinAliasCounters);
-                $subSelects = [];
-
-                foreach ($group->instructions as $instruction) {
-                    $alias = $instruction->alias;
-                    $colWithoutAlias = (string) ($instruction->column ?? '*');
-                    $wrappedCol = $colWithoutAlias === '*' ? '*' : $grammar->wrap($colWithoutAlias);
-
-                    if ($instruction->function === 'exists') {
-                        // EXISTS: check if any rows exist
-                        $subSelects[] = sprintf('(CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END) AS %s', $grammar->wrap($alias));
-                        $existsCols[$alias] = 'base_exists';
-                        $query->addSelect(sprintf('%s.%s', $jAlias, $alias));
-                    } elseif ($instruction->function === 'avg') {
-                        // AVG: use SUM/COUNT for proper global average
-                        $sumCol = $alias.'__sum';
-                        $cntCol = $alias.'__cnt';
-                        $subSelects[] = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
-                        $subSelects[] = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
-                        $existsCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
-                        $query->addSelect(sprintf('%s.%s', $jAlias, $sumCol));
-                        $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
-                    } else {
-                        // COUNT, SUM, MAX, MIN
-                        $fn = strtoupper($instruction->function);
-                        $subSelects[] = sprintf('%s(%s) AS %s', $fn, $wrappedCol, $grammar->wrap($alias));
-                        $query->addSelect(sprintf('%s.%s', $jAlias, $alias));
-                    }
-                }
-
-                // Build base query subquery, applying any constraint closure
-                $subQuery = clone $builder;
-                $subQuery->getQuery()->columns = null; // Clear existing selects
-
-                if ($group->constraints !== null) {
-                    ($group->constraints)($subQuery);
-                }
-
-                $subQuery->selectRaw(implode(', ', $subSelects));
-
-                // CROSS JOIN to add aggregates to every row
-                $query->crossJoinSub($subQuery, $jAlias);
-
-                continue;
+                $this->buildBaseGroup($group, $builder, $query, $grammar, $joinAliasCounters, $existsCols);
+            } elseif ($group->type === 'relation' && ! $group->isHasOneOrMany) {
+                $this->buildNonHasOneOrManyGroup($group, $query, $existsCols);
+            } else {
+                $this->buildHasOneOrManyGroup($group, $query, $grammar, $joinAliasCounters, $existsCols);
             }
-
-            // Non-HasOneOrMany relations use correlated subqueries via withAggregate
-            // except for AVG which needs special handling
-            if ($group->type === 'relation' && ! $group->isHasOneOrMany) {
-                foreach ($group->instructions as $instruction) {
-                    // Skip AVG for now, we'll handle it in aggregateResults using a direct query
-                    if ($instruction->function === 'avg') {
-                        // Mark this instruction for post-processing
-                        $existsCols[$instruction->alias] = ['type' => 'avg_non_has_one_or_many', 'relation' => $group->relation, 'constraints' => $group->constraints, 'column' => $instruction->column];
-
-                        continue;
-                    }
-
-                    // Build the relations array properly, filtering out null constraints
-                    $relations = $instruction->relations;
-                    if ($group->constraints !== null) {
-                        // Relations array should have the constraint
-                        $query->withAggregate($relations, $instruction->column, $instruction->function);
-                    } else {
-                        // No constraints, just pass the relation name
-                        $relationName = array_key_first($relations);
-                        $query->withAggregate($relationName, $instruction->column, $instruction->function);
-                    }
-                }
-
-                continue;
-            }
-
-            // ─── Derived-table path for HasOneOrMany relations ───────
-            //
-            // Build a GROUP BY subquery that pre-aggregates by FK, then LEFT JOIN
-
-            $jAlias = $this->joinAlias($group->baseName, $joinAliasCounters);
-            $fk = $group->fk;
-            $localKey = $group->localKey;
-
-            $subSelects = [$fk]; // FK is the GROUP BY key
-
-            // Track AVG instructions for special handling
-            $avgCols = [];
-
-            foreach ($group->instructions as $instruction) {
-                $alias = $instruction->alias;
-                $colWithoutAlias = (string) ($instruction->column ?? '*');
-                $wrappedCol = $colWithoutAlias === '*' ? '*' : $grammar->wrap($colWithoutAlias);
-
-                if ($instruction->function === 'exists') {
-                    $cntCol = $alias.'__ecnt';
-                    $subSelects[] = sprintf('COUNT(*) AS %s', $grammar->wrap($cntCol));
-                    $existsCols[$alias] = $cntCol;
-                    $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
-                } elseif ($instruction->function === 'avg') {
-                    // For AVG, we need SUM and COUNT to compute global average
-                    $sumCol = $alias.'__sum';
-                    $cntCol = $alias.'__cnt';
-                    $subSelects[] = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
-                    $subSelects[] = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
-                    $avgCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
-                    $query->addSelect(sprintf('%s.%s', $jAlias, $sumCol));
-                    $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
-                } else {
-                    $fn = strtoupper($instruction->function);
-                    $subSelects[] = sprintf('%s(%s) AS %s', $fn, $wrappedCol, $grammar->wrap($alias));
-                    $query->addSelect(sprintf('%s.%s', $jAlias, $alias));
-                }
-            }
-
-            // Store avgCols in existsCols for tracking
-            foreach ($avgCols as $alias => $cols) {
-                $existsCols[$alias] = $cols;
-            }
-
-            // Build the relation subquery
-            $subQuery = $group->relation->getRelated()->newQuery();
-            if ($group->constraints !== null) {
-                ($group->constraints)($subQuery);
-            }
-
-            $subQuery->selectRaw(implode(', ', $subSelects))->groupBy($fk);
-
-            $query->leftJoinSub($subQuery, $jAlias, sprintf('%s.%s', $jAlias, $fk), '=', $localKey);
         }
 
         return [$query, $existsCols];
     }
 
     /**
-     * @param  array<string, mixed>  $counters
+     * Base query aggregates: CROSS JOIN with a subquery that computes aggregates
+     * over the filtered dataset, adding those values to every row.
+     *
+     * $builder is the original unmodified builder (used as the base for the subquery).
+     * $query is the accumulating query that receives the CROSS JOIN and SELECT additions.
+     *
+     * @param  array<string, int>    $joinAliasCounters
+     * @param  array<string, mixed>  $existsCols
      */
+    private function buildBaseGroup(
+        InstructionGroup $group,
+        Builder $builder,
+        Builder $query,
+        Grammar $grammar,
+        array &$joinAliasCounters,
+        array &$existsCols,
+    ): void {
+        $jAlias     = $this->joinAlias('base', $joinAliasCounters);
+        $subSelects = [];
+
+        foreach ($group->instructions as $instruction) {
+            $alias      = $instruction->alias;
+            $rawCol     = (string) ($instruction->column ?? '*');
+            $wrappedCol = $rawCol === '*' ? '*' : $grammar->wrap($rawCol);
+
+            if ($instruction->function === 'exists') {
+                $subSelects[]       = sprintf('(CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END) AS %s', $grammar->wrap($alias));
+                $existsCols[$alias] = 'base_exists';
+                $query->addSelect(sprintf('%s.%s', $jAlias, $alias));
+            } elseif ($instruction->function === 'avg') {
+                $sumCol = $alias.'__sum';
+                $cntCol = $alias.'__cnt';
+                $subSelects[]       = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
+                $subSelects[]       = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
+                $existsCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
+                $query->addSelect(sprintf('%s.%s', $jAlias, $sumCol));
+                $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
+            } else {
+                $fn           = strtoupper($instruction->function);
+                $subSelects[] = sprintf('%s(%s) AS %s', $fn, $wrappedCol, $grammar->wrap($alias));
+                $query->addSelect(sprintf('%s.%s', $jAlias, $alias));
+            }
+        }
+
+        $subQuery = clone $builder;
+        $subQuery->getQuery()->columns = null;
+
+        if ($group->constraints !== null) {
+            ($group->constraints)($subQuery);
+        }
+
+        $subQuery->selectRaw(implode(', ', $subSelects));
+        $query->crossJoinSub($subQuery, $jAlias);
+    }
+
+    /**
+     * Non-HasOneOrMany relations (e.g. BelongsToMany): use correlated withAggregate()
+     * subqueries. AVG is deferred to post-processing in AggregateResolver.
+     *
+     * @param  array<string, mixed>  $existsCols
+     */
+    private function buildNonHasOneOrManyGroup(
+        InstructionGroup $group,
+        Builder $query,
+        array &$existsCols,
+    ): void {
+        foreach ($group->instructions as $instruction) {
+            if ($instruction->function === 'avg') {
+                $existsCols[$instruction->alias] = [
+                    'type'        => 'avg_non_has_one_or_many',
+                    'relation'    => $group->relation,
+                    'constraints' => $group->constraints,
+                    'column'      => $instruction->column,
+                ];
+
+                continue;
+            }
+
+            $relations = $instruction->relations;
+
+            if ($group->constraints !== null) {
+                $query->withAggregate($relations, $instruction->column, $instruction->function);
+            } else {
+                $query->withAggregate(array_key_first($relations), $instruction->column, $instruction->function);
+            }
+        }
+    }
+
+    /**
+     * HasOneOrMany relations: GROUP BY subquery pre-aggregated by FK, then LEFT JOIN.
+     *
+     * @param  array<string, int>    $joinAliasCounters
+     * @param  array<string, mixed>  $existsCols
+     */
+    private function buildHasOneOrManyGroup(
+        InstructionGroup $group,
+        Builder $query,
+        Grammar $grammar,
+        array &$joinAliasCounters,
+        array &$existsCols,
+    ): void {
+        $jAlias     = $this->joinAlias($group->baseName, $joinAliasCounters);
+        $fk         = $group->fk;
+        $localKey   = $group->localKey;
+        $subSelects = [$fk];
+        $avgCols    = [];
+
+        foreach ($group->instructions as $instruction) {
+            $alias      = $instruction->alias;
+            $rawCol     = (string) ($instruction->column ?? '*');
+            $wrappedCol = $rawCol === '*' ? '*' : $grammar->wrap($rawCol);
+
+            if ($instruction->function === 'exists') {
+                $cntCol       = $alias.'__ecnt';
+                $subSelects[] = sprintf('COUNT(*) AS %s', $grammar->wrap($cntCol));
+                $existsCols[$alias] = $cntCol;
+                $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
+            } elseif ($instruction->function === 'avg') {
+                $sumCol = $alias.'__sum';
+                $cntCol = $alias.'__cnt';
+                $subSelects[]    = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
+                $subSelects[]    = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
+                $avgCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
+                $query->addSelect(sprintf('%s.%s', $jAlias, $sumCol));
+                $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
+            } else {
+                $fn           = strtoupper($instruction->function);
+                $subSelects[] = sprintf('%s(%s) AS %s', $fn, $wrappedCol, $grammar->wrap($alias));
+                $query->addSelect(sprintf('%s.%s', $jAlias, $alias));
+            }
+        }
+
+        foreach ($avgCols as $alias => $cols) {
+            $existsCols[$alias] = $cols;
+        }
+
+        $subQuery = $group->relation->getRelated()->newQuery();
+
+        if ($group->constraints !== null) {
+            ($group->constraints)($subQuery);
+        }
+
+        $subQuery->selectRaw(implode(', ', $subSelects))->groupBy($fk);
+
+        $query->leftJoinSub($subQuery, $jAlias, sprintf('%s.%s', $jAlias, $fk), '=', $localKey);
+    }
+
+    /** @param array<string, int> $counters */
     private function joinAlias(string $baseName, array &$counters): string
     {
         $count = ($counters[$baseName] = ($counters[$baseName] ?? 0) + 1);
