@@ -124,19 +124,7 @@ class AggregateCoordinator
         ?Closure $constraint = null,
     ): static {
         if ($relations === null) {
-            $alias = $as ?? $this->aliasResolver()->forColumn($column, $function);
-
-            $storedColumn = is_string($column)
-                ? AliasResolver::stripAlias($column)
-                : $column;
-
-            $this->instructions[] = new AggregateInstruction(
-                $function, $alias, $storedColumn, null, $constraint,
-            );
-
-            $this->cachedValues = null;
-
-            return $this;
+            return $this->addBaseAggregate($column, $function, $as, $constraint);
         }
 
         $relations = is_array($relations) ? $relations : [$relations];
@@ -145,6 +133,38 @@ class AggregateCoordinator
             throw new InvalidArgumentException('Aggregate relation list cannot be empty.');
         }
 
+        return $this->addRelationAggregates($relations, $column, $function);
+    }
+
+    private function addBaseAggregate(
+        Expression|string $column,
+        string $function,
+        ?string $as,
+        ?Closure $constraint,
+    ): static {
+        $alias = $as ?? $this->aliasResolver()->forColumn($column, $function);
+
+        $storedColumn = is_string($column)
+            ? AliasResolver::stripAlias($column)
+            : $column;
+
+        $this->instructions[] = new AggregateInstruction(
+            $function, $alias, $storedColumn, null, $constraint,
+        );
+
+        $this->cachedValues = null;
+
+        return $this;
+    }
+
+    /**
+     * @param array<int|string, mixed> $relations
+     */
+    private function addRelationAggregates(
+        array $relations,
+        Expression|string $column,
+        string $function,
+    ): static {
         foreach ($relations as $name => $constraints) {
             if (! is_string($name)) {
                 [$name, $constraints] = [$constraints, null];
