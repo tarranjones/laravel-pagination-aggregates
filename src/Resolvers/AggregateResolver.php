@@ -104,103 +104,97 @@ class AggregateResolver
      */
     private function groupInstructions(array $instructions, Builder $builder): array
     {
-        $groups = [];
-        $baseGroups = [];
+        /** @var array<string, array{meta: array<string, mixed>, instructions: AggregateInstruction[]}> */
+        $baseAccum = [];
+        /** @var array<string, array{meta: array<string, mixed>, instructions: AggregateInstruction[]}> */
+        $relAccum = [];
 
         foreach ($instructions as $instruction) {
-            // Base query aggregates — group by constraint key
             if ($instruction->relations === null) {
-                $constraintKey = 'none';
+                $key = 'base:'.$this->constraintKey($instruction->constraint, clone $builder);
 
-                if ($instruction->constraint !== null) {
-                    $tempQuery = clone $builder;
-                    ($instruction->constraint)($tempQuery);
-                    $constraintKey = md5($tempQuery->toSql().serialize($tempQuery->getBindings()));
+                if (! isset($baseAccum[$key])) {
+                    $baseAccum[$key] = [
+                        'meta' => [
+                            'type'           => 'base',
+                            'baseName'       => null,
+                            'constraints'    => $instruction->constraint,
+                            'table'          => $builder->getModel()->getTable(),
+                            'fk'             => null,
+                            'localKey'       => null,
+                            'isHasOneOrMany' => true,
+                            'relation'       => null,
+                        ],
+                        'instructions' => [],
+                    ];
                 }
 
-                $key = 'base:'.$constraintKey;
-
-                if (! isset($baseGroups[$key])) {
-                    $baseGroups[$key] = new InstructionGroup(
-                        type: 'base',
-                        baseName: null,
-                        constraints: $instruction->constraint,
-                        table: $builder->getModel()->getTable(),
-                        fk: null,
-                        localKey: null,
-                        instructions: [],
-                        isHasOneOrMany: true,
-                        relation: null,
-                    );
-                }
-
-                $baseGroups[$key] = new InstructionGroup(
-                    type: $baseGroups[$key]->type,
-                    baseName: $baseGroups[$key]->baseName,
-                    constraints: $baseGroups[$key]->constraints,
-                    table: $baseGroups[$key]->table,
-                    fk: $baseGroups[$key]->fk,
-                    localKey: $baseGroups[$key]->localKey,
-                    instructions: [...$baseGroups[$key]->instructions, $instruction],
-                    isHasOneOrMany: $baseGroups[$key]->isHasOneOrMany,
-                    relation: $baseGroups[$key]->relation,
-                );
+                $baseAccum[$key]['instructions'][] = $instruction;
 
                 continue;
             }
 
-            // Relation aggregates
-            $name = (string) array_key_first($instruction->relations);
+            $name        = (string) array_key_first($instruction->relations);
             $constraints = $instruction->relations[$name];
-            $baseName = AliasResolver::stripAlias($name);
-
-            // Create a temporary relation to extract metadata
-            $relation = $builder->getModel()->newInstance()->{$baseName}();
+            $baseName    = AliasResolver::stripAlias($name);
+            $relation    = $builder->getModel()->newInstance()->{$baseName}();
             $isHasOneOrMany = $relation instanceof HasOneOrMany;
 
-            // Serialize constraints by executing them on a new query and converting to SQL
-            $constraintKey = 'none';
-            if ($constraints !== null) {
-                $tempQuery = $relation->getRelated()->newQuery();
-                $constraints($tempQuery);
-                $constraintKey = md5($tempQuery->toSql().serialize($tempQuery->getBindings()));
+            $key = $baseName.':'.$this->relationConstraintKey($constraints, $relation);
+
+            if (! isset($relAccum[$key])) {
+                $relAccum[$key] = [
+                    'meta' => [
+                        'type'           => 'relation',
+                        'baseName'       => $baseName,
+                        'constraints'    => $constraints,
+                        'table'          => $relation->getRelated()->getTable(),
+                        'fk'             => $isHasOneOrMany ? $relation->getForeignKeyName() : null,
+                        'localKey'       => $isHasOneOrMany ? $builder->getModel()->getQualifiedKeyName() : null,
+                        'isHasOneOrMany' => $isHasOneOrMany,
+                        'relation'       => $relation,
+                    ],
+                    'instructions' => [],
+                ];
             }
 
-            $key = $baseName.':'.$constraintKey;
-
-            if (! isset($groups[$key])) {
-                $groups[$key] = new InstructionGroup(
-                    type: 'relation',
-                    baseName: $baseName,
-                    constraints: $constraints,
-                    table: $relation->getRelated()->getTable(),
-                    fk: $isHasOneOrMany ? $relation->getForeignKeyName() : null,
-                    localKey: $isHasOneOrMany ? $builder->getModel()->getQualifiedKeyName() : null,
-                    instructions: [],
-                    isHasOneOrMany: $isHasOneOrMany,
-                    relation: $relation,
-                );
-            }
-
-            $groups[$key] = new InstructionGroup(
-                type: $groups[$key]->type,
-                baseName: $groups[$key]->baseName,
-                constraints: $groups[$key]->constraints,
-                table: $groups[$key]->table,
-                fk: $groups[$key]->fk,
-                localKey: $groups[$key]->localKey,
-                instructions: [...$groups[$key]->instructions, $instruction],
-                isHasOneOrMany: $groups[$key]->isHasOneOrMany,
-                relation: $groups[$key]->relation,
-            );
+            $relAccum[$key]['instructions'][] = $instruction;
         }
 
-        // Prepend base groups (preserving insertion order)
-        foreach (array_reverse($baseGroups) as $group) {
-            array_unshift($groups, $group);
+        $groups = [];
+
+        foreach (array_reverse($baseAccum) as $item) {
+            array_unshift($groups, new InstructionGroup(...$item['meta'], instructions: $item['instructions']));
         }
 
-        return array_values($groups);
+        foreach ($relAccum as $item) {
+            $groups[] = new InstructionGroup(...$item['meta'], instructions: $item['instructions']);
+        }
+
+        return $groups;
+    }
+
+    private function constraintKey(?Closure $constraint, Builder $tempQuery): string
+    {
+        if ($constraint === null) {
+            return 'none';
+        }
+
+        $constraint($tempQuery);
+
+        return md5($tempQuery->toSql().serialize($tempQuery->getBindings()));
+    }
+
+    private function relationConstraintKey(mixed $constraints, mixed $relation): string
+    {
+        if ($constraints === null) {
+            return 'none';
+        }
+
+        $tempQuery = $relation->getRelated()->newQuery();
+        $constraints($tempQuery);
+
+        return md5($tempQuery->toSql().serialize($tempQuery->getBindings()));
     }
 
     /**
