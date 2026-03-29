@@ -11,40 +11,24 @@ class AliasResolver
 {
     public function __construct(private readonly Grammar $grammar) {}
 
-    /**
-     * @return array{column: string, alias: string}
-     */
-    public function forDirect(Expression|string $column, string $function, string $prefix = 'total'): array
+    public static function explicitAlias(string $name): ?string
     {
-        if ($column instanceof Expression) {
-            $col = (string) $column->getValue($this->grammar);
-            $snaked = strtolower((string) preg_replace('/[^[:alnum:]_]/u', '_', $col));
+        $segments = explode(' ', $name);
 
-            return ['column' => $col, 'alias' => $prefix.'_'.$function.'_'.$snaked];
-        }
+        return count($segments) === 3 && strtolower($segments[1]) === 'as' ? $segments[2] : null;
+    }
 
-        $segments = preg_split('/\s+as\s+/i', $column, 2);
-
-        if (count($segments) === 2) {
-            return ['column' => trim($segments[0]), 'alias' => trim($segments[1])];
-        }
-
-        $col = trim($column);
-        $snaked = strtolower((string) preg_replace('/[^[:alnum:]_]/u', '_', $col));
-
-        if ($function === 'count' && $col === '*') {
-            return ['column' => $col, 'alias' => $prefix.'_count'];
-        }
-
-        return ['column' => $col, 'alias' => $prefix.'_'.$function.'_'.$snaked];
+    public static function stripAlias(string $name): string
+    {
+        return (string) preg_replace('/\s+as\s+\S+$/i', '', $name);
     }
 
     public function forRelation(string $relation, Expression|string $column, ?string $function): string
     {
-        $segments = explode(' ', $relation);
+        $explicit = self::explicitAlias($relation);
 
-        if (count($segments) === 3 && strtolower($segments[1]) === 'as') {
-            return $segments[2];
+        if ($explicit !== null) {
+            return $explicit;
         }
 
         $columnValue = $column instanceof Expression
@@ -53,7 +37,29 @@ class AliasResolver
 
         $columnValue = strtolower((string) $columnValue);
 
-        $raw = sprintf('%s %s %s', $relation, $function, $columnValue);
+        return self::sanitizeToSnake(sprintf('%s %s %s', $relation, $function, $columnValue));
+    }
+
+    public function forColumn(Expression|string $column, string $function): string
+    {
+        if (is_string($column)) {
+            $explicit = self::explicitAlias($column);
+            if ($explicit !== null) {
+                return $explicit;
+            }
+        }
+
+        $columnValue = $column instanceof Expression
+            ? $column->getValue($this->grammar)
+            : $column;
+
+        $columnValue = strtolower((string) $columnValue);
+
+        return self::sanitizeToSnake(sprintf('%s %s', $function, $columnValue));
+    }
+
+    private static function sanitizeToSnake(string $raw): string
+    {
         $sanitized = trim((string) preg_replace(['/[^[:alnum:][:space:]_]+/u', '/\s+/'], ['_', ' '], $raw), '_');
 
         return str($sanitized)->snake()->value();
