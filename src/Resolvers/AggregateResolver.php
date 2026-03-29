@@ -211,62 +211,78 @@ class AggregateResolver
         foreach ($instructions as $instruction) {
             $alias = $instruction->alias;
 
-            // Base query aggregates are directly in the SELECT, single value across all rows
-            if ($instruction->relations === null) {
-                if (isset($existsCols[$alias])) {
-                    $colInfo = $existsCols[$alias];
-
-                    if (is_array($colInfo)) {
-                        // AVG: compute sum/count from first row (all rows have same aggregate values)
-                        $sum = $results->first()->getAttribute($colInfo['sum']);
-                        $count = $results->first()->getAttribute($colInfo['count']);
-                        $meta[$alias] = $count > 0 ? $sum / $count : null;
-                    } elseif ($colInfo === 'base_exists') {
-                        // EXISTS: directly in the row as boolean
-                        $meta[$alias] = (bool) ($results->first()->getAttribute($alias) ?? 0);
-                    } else {
-                        // Shouldn't reach here for base queries
-                        $meta[$alias] = (bool) ($results->first()->getAttribute($colInfo) ?? 0);
-                    }
-                } else {
-                    // Direct aggregate (COUNT, SUM, MAX, MIN) - same value in all rows
-                    $meta[$alias] = $results->first()->getAttribute($alias);
-                }
-
-                continue;
-            }
-
-            // Relation aggregates need to be summed/max/min across all rows
-            if (isset($existsCols[$alias])) {
-                $colInfo = $existsCols[$alias];
-
-                if (is_array($colInfo)) {
-                    // Skip avg_non_has_one_or_many - handled separately
-                    if (isset($colInfo['type']) && $colInfo['type'] === 'avg_non_has_one_or_many') {
-                        continue;
-                    }
-
-                    // AVG: compute global sum/count
-                    $totalSum = $results->sum($colInfo['sum']);
-                    $totalCount = $results->sum($colInfo['count']);
-                    $meta[$alias] = $totalCount > 0 ? $totalSum / $totalCount : null;
-                } else {
-                    // EXISTS
-                    $meta[$alias] = (bool) $results->sum(fn ($m): int => (int) ($m->getAttribute($colInfo) ?? 0));
-                }
-            } else {
-                $values = $results->pluck($alias);
-                $meta[$alias] = match ($instruction->function) {
-                    'count', 'sum' => $values->sum(),
-                    'max' => $values->max(),
-                    'min' => $values->min(),
-                    'exists' => (bool) $values->filter()->count(), // fallback path only
-                    default => null,
-                };
-            }
+            $meta[$alias] = $instruction->relations === null
+                ? $this->resolveBaseResult($instruction, $results, $existsCols)
+                : $this->resolveRelationResult($instruction, $results, $existsCols);
         }
 
         return $meta;
+    }
+
+    /**
+     * Resolve a single base-query aggregate from the join results.
+     * Base aggregates are the same value in every row — read from the first.
+     *
+     * @param  array<string, string|array>  $existsCols
+     */
+    private function resolveBaseResult(AggregateInstruction $instruction, Collection $results, array $existsCols): mixed
+    {
+        $alias   = $instruction->alias;
+        $colInfo = $existsCols[$alias] ?? null;
+
+        if ($colInfo === null) {
+            return $results->first()->getAttribute($alias);
+        }
+
+        if (is_array($colInfo)) {
+            // AVG: stored as SUM/COUNT pair
+            $sum   = $results->first()->getAttribute($colInfo['sum']);
+            $count = $results->first()->getAttribute($colInfo['count']);
+
+            return $count > 0 ? $sum / $count : null;
+        }
+
+        // base_exists
+        return (bool) ($results->first()->getAttribute($alias) ?? 0);
+    }
+
+    /**
+     * Resolve a single relation aggregate by aggregating values across all rows.
+     *
+     * @param  array<string, string|array>  $existsCols
+     */
+    private function resolveRelationResult(AggregateInstruction $instruction, Collection $results, array $existsCols): mixed
+    {
+        $alias   = $instruction->alias;
+        $colInfo = $existsCols[$alias] ?? null;
+
+        if ($colInfo === null) {
+            $values = $results->pluck($alias);
+
+            return match ($instruction->function) {
+                'count', 'sum' => $values->sum(),
+                'max'          => $values->max(),
+                'min'          => $values->min(),
+                'exists'       => (bool) $values->filter()->count(),
+                default        => null,
+            };
+        }
+
+        if (is_array($colInfo)) {
+            // avg_non_has_one_or_many is handled by post-processing in resolve()
+            if (isset($colInfo['type']) && $colInfo['type'] === 'avg_non_has_one_or_many') {
+                return null;
+            }
+
+            // AVG: global sum/count across all rows
+            $totalSum   = $results->sum($colInfo['sum']);
+            $totalCount = $results->sum($colInfo['count']);
+
+            return $totalCount > 0 ? $totalSum / $totalCount : null;
+        }
+
+        // EXISTS via count column
+        return (bool) $results->sum(fn ($m): int => (int) ($m->getAttribute($colInfo) ?? 0));
     }
 
     /**
