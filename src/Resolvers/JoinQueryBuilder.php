@@ -101,7 +101,7 @@ class JoinQueryBuilder
      */
     private function buildNonHasOneOrManyGroup(
         InstructionGroup $instructionGroup,
-        Builder $query,
+        Builder $builder,
         array &$existsCols,
     ): void {
         foreach ($instructionGroup->instructions as $instruction) {
@@ -120,11 +120,11 @@ class JoinQueryBuilder
 
             if ($instructionGroup->constraints instanceof Closure) {
                 // Pass the full $relations array so withAggregate receives the closure-keyed relation name.
-                $query->withAggregate($relations, $instruction->column, $instruction->function);
+                $builder->withAggregate($relations, $instruction->column, $instruction->function);
             } else {
                 // No constraint closure: pass just the relation name string (array_key_first) so
                 // withAggregate does not try to interpret it as a closure-constrained relation.
-                $query->withAggregate(array_key_first($relations), $instruction->column, $instruction->function);
+                $builder->withAggregate(array_key_first($relations), $instruction->column, $instruction->function);
             }
         }
     }
@@ -137,7 +137,7 @@ class JoinQueryBuilder
      */
     private function buildHasOneOrManyGroup(
         InstructionGroup $instructionGroup,
-        Builder $query,
+        Builder $builder,
         Grammar $grammar,
         array &$joinAliasCounters,
         array &$existsCols,
@@ -156,19 +156,19 @@ class JoinQueryBuilder
                 $cntCol = '_pag_ecnt_'.$alias;
                 $subSelects[] = sprintf('COUNT(*) AS %s', $grammar->wrap($cntCol));
                 $existsCols[$alias] = $cntCol;
-                $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
+                $builder->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
             } elseif ($instruction->function === 'avg') {
                 $sumCol = '_pag_sum_'.$alias;
                 $cntCol = '_pag_cnt_'.$alias;
                 $subSelects[] = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
                 $subSelects[] = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
                 $avgCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
-                $query->addSelect(sprintf('%s.%s', $jAlias, $sumCol));
-                $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
+                $builder->addSelect(sprintf('%s.%s', $jAlias, $sumCol));
+                $builder->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
             } else {
                 $fn = strtoupper($instruction->function);
                 $subSelects[] = sprintf('%s(%s) AS %s', $fn, $wrappedCol, $grammar->wrap($alias));
-                $query->addSelect(sprintf('%s.%s', $jAlias, $alias));
+                $builder->addSelect(sprintf('%s.%s', $jAlias, $alias));
             }
         }
 
@@ -184,7 +184,7 @@ class JoinQueryBuilder
 
         $subQuery->selectRaw(implode(', ', $subSelects))->groupBy($fk);
 
-        $query->leftJoinSub($subQuery, $jAlias, sprintf('%s.%s', $jAlias, $fk), '=', $localKey);
+        $builder->leftJoinSub($subQuery, $jAlias, sprintf('%s.%s', $jAlias, $fk), '=', $localKey);
     }
 
     /** @param array<string, int> $counters */

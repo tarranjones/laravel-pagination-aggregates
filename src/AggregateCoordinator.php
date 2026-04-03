@@ -25,7 +25,7 @@ class AggregateCoordinator
     public function withCount(string|array|null $relations = null, string|array ...$extra): static
     {
         if ($relations === null) {
-            return $this->withAggregate(null, '*', 'count', null);
+            return $this->withAggregate(null, '*', 'count');
         }
 
         return $this->withAggregate(
@@ -41,7 +41,7 @@ class AggregateCoordinator
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'max', null);
+        return $this->withAggregate($relation, $column, 'max');
     }
 
     public function withMin(
@@ -50,7 +50,7 @@ class AggregateCoordinator
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'min', null);
+        return $this->withAggregate($relation, $column, 'min');
     }
 
     public function withSum(
@@ -59,7 +59,7 @@ class AggregateCoordinator
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'sum', null);
+        return $this->withAggregate($relation, $column, 'sum');
     }
 
     public function withAvg(
@@ -68,13 +68,13 @@ class AggregateCoordinator
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'avg', null);
+        return $this->withAggregate($relation, $column, 'avg');
     }
 
     public function withExists(string|array|null $relations = null, string|array ...$extra): static
     {
         if ($relations === null) {
-            return $this->withAggregate(null, '*', 'exists', null);
+            return $this->withAggregate(null, '*', 'exists');
         }
 
         return $this->withAggregate(
