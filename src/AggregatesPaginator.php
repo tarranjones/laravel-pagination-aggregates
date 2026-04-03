@@ -88,7 +88,7 @@ trait AggregatesPaginator
      */
     protected function appendAggregateData(array $payload): array
     {
-        if ($this->aggregates === null || $this->aggregates === []) {
+        if (empty($this->aggregates)) {
             return $payload;
         }
 
