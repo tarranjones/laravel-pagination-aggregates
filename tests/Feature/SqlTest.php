@@ -24,10 +24,10 @@ beforeEach(function (): void {
         $blueprint->integer('votes');
     });
 
-    $postA = SqlPost::query()->create(['title' => 'A']);
+    $sqlPost = SqlPost::query()->create(['title' => 'A']);
     $postB = SqlPost::query()->create(['title' => 'B']);
-    SqlComment::query()->create(['sql_post_id' => $postA->id, 'votes' => 3]);
-    SqlComment::query()->create(['sql_post_id' => $postA->id, 'votes' => 5]);
+    SqlComment::query()->create(['sql_post_id' => $sqlPost->id, 'votes' => 3]);
+    SqlComment::query()->create(['sql_post_id' => $sqlPost->id, 'votes' => 5]);
     SqlComment::query()->create(['sql_post_id' => $postB->id, 'votes' => 2]);
 });
 
