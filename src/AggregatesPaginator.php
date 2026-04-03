@@ -11,6 +11,9 @@ trait AggregatesPaginator
 {
     protected AggregateCoordinator $coordinator;
 
+    /** @var array<string, mixed>|null */
+    public ?array $aggregates = null;
+
     public function withCount(string|array|null $relations = null, string|array ...$extra): static
     {
         $this->coordinator->withCount($relations, ...$extra);
@@ -61,24 +64,21 @@ trait AggregatesPaginator
         return $this;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function aggregate(): array
+    public function aggregate(): static
     {
         if (method_exists($this, 'initializePaginator')) {
             $this->initializePaginator();
         }
 
-        return $this->coordinator->resolve();
+        $this->aggregates = array_merge($this->aggregates ?? [], $this->coordinator->resolve());
+
+        return $this;
     }
 
     #[Override]
     public function toArray(): array
     {
-        if (method_exists($this, 'initializePaginator')) {
-            $this->initializePaginator();
-        }
+        $this->aggregate();
 
         return $this->appendAggregateData(parent::toArray());
     }
@@ -88,13 +88,11 @@ trait AggregatesPaginator
      */
     protected function appendAggregateData(array $payload): array
     {
-        $aggregates = $this->coordinator->resolve();
-
-        if ($aggregates === []) {
+        if ($this->aggregates === null || $this->aggregates === []) {
             return $payload;
         }
 
-        $payload['aggregates'] = array_merge($payload['aggregates'] ?? [], $aggregates);
+        $payload['aggregates'] = array_merge($payload['aggregates'] ?? [], $this->aggregates);
 
         return $payload;
     }

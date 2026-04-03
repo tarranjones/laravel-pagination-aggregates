@@ -576,12 +576,12 @@ it('withCount accepts an array of relation names', function (): void {
         ->and($aggregates['tags_count'])->toBe(0);
 });
 
-it('aggregate() returns resolved aggregates without serializing the paginator', function (): void {
-    $result = Post::query()->lazyPaginate(5)->withCount()->aggregate();
+it('aggregate() returns the paginator and hydrates the aggregates property', function (): void {
+    $paginator = Post::query()->lazyPaginate(5)->withCount()->aggregate();
 
-    expect($result)->toBeArray()
-        ->and($result)->toHaveKey('count')
-        ->and($result['count'])->toBe(Post::count());
+    expect($paginator->aggregates)->toBeArray()
+        ->and($paginator->aggregates)->toHaveKey('count')
+        ->and($paginator->aggregates['count'])->toBe(Post::count());
 });
 
 it('aggregate() result is cached — calling toArray() afterwards does not re-run queries', function (): void {
@@ -589,7 +589,8 @@ it('aggregate() result is cached — calling toArray() afterwards does not re-ru
 
     $paginator = Post::query()->lazyPaginate(5)->withCount();
 
-    $aggregates = $paginator->aggregate();
+    $paginator->aggregate();
+
     $queryCountAfterAggregate = count(DB::getQueryLog());
 
     $paginator->toArray();
@@ -597,21 +598,35 @@ it('aggregate() result is cached — calling toArray() afterwards does not re-ru
 
     DB::disableQueryLog();
 
-    expect($aggregates)->toHaveKey('count')
+    expect($paginator->aggregates)->toHaveKey('count')
         ->and($queryCountAfterToArray)->toBe($queryCountAfterAggregate); // aggregate already resolved — no extra queries
 });
-it('aggregate() works on lazySimplePaginate', function (): void {
-    $result = Post::query()->lazySimplePaginate(5)->withCount()->aggregate();
 
-    expect($result)->toBeArray()
-        ->and($result)->toHaveKey('count')
-        ->and($result['count'])->toBe(Post::count());
+it('aggregate() works on lazySimplePaginate', function (): void {
+    $paginator = Post::query()->lazySimplePaginate(5)->withCount()->aggregate();
+
+    expect($paginator->aggregates)->toBeArray()
+        ->and($paginator->aggregates)->toHaveKey('count')
+        ->and($paginator->aggregates['count'])->toBe(Post::count());
 });
 
 it('aggregate() works on lazyCursorPaginate', function (): void {
-    $result = Post::query()->lazyCursorPaginate(5)->withCount()->aggregate();
+    $paginator = Post::query()->lazyCursorPaginate(5)->withCount()->aggregate();
 
-    expect($result)->toBeArray()
-        ->and($result)->toHaveKey('count')
-        ->and($result['count'])->toBe(Post::count());
+    expect($paginator->aggregates)->toBeArray()
+        ->and($paginator->aggregates)->toHaveKey('count')
+        ->and($paginator->aggregates['count'])->toBe(Post::count());
+});
+
+it('base exists resolves correctly when batched with another aggregate', function (): void {
+    $aggregates = Post::query()
+        ->lazyPaginate(10)
+        ->withCount()
+        ->withExists()
+        ->toArray()['aggregates'];
+
+    expect($aggregates)->toHaveKey('count')
+        ->and($aggregates)->toHaveKey('exists')
+        ->and($aggregates['exists'])->toBeBool()
+        ->and($aggregates['exists'])->toBeTrue();
 });
