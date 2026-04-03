@@ -7,15 +7,18 @@ namespace TarranJones\LaravelPaginationAggregates;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\Cursor;
 use Illuminate\Support\ServiceProvider;
+use TarranJones\LaravelPaginationAggregates\Pagination\CursorPaginator;
+use TarranJones\LaravelPaginationAggregates\Pagination\LengthAwarePaginator;
+use TarranJones\LaravelPaginationAggregates\Pagination\Paginator;
 
 class PaginationAggregatesServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        Builder::macro('paginateWithTotals', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): AggregateLengthAwarePaginator => PaginatorFactory::paginate($this, $perPage, $columns, $pageName, $page));
+        Builder::macro('lazyPaginate', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): LengthAwarePaginator => PaginatorFactory::paginate($this, $perPage, $columns, $pageName, $page));
 
-        Builder::macro('simplePaginateWithTotals', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): AggregatePaginator => PaginatorFactory::simplePaginate($this, $perPage, $columns, $pageName, $page));
+        Builder::macro('lazySimplePaginate', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): Paginator => PaginatorFactory::simplePaginate($this, $perPage, $columns, $pageName, $page));
 
-        Builder::macro('cursorPaginateWithTotals', fn (?int $perPage = null, array $columns = ['*'], string $cursorName = 'cursor', Cursor|string|null $cursor = null): AggregateCursorPaginator => PaginatorFactory::cursorPaginate($this, $perPage, $columns, $cursorName, $cursor));
+        Builder::macro('lazyCursorPaginate', fn (?int $perPage = null, array $columns = ['*'], string $cursorName = 'cursor', Cursor|string|null $cursor = null): CursorPaginator => PaginatorFactory::cursorPaginate($this, $perPage, $columns, $cursorName, $cursor));
     }
 }

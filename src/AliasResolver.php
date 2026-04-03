@@ -18,12 +18,22 @@ class AliasResolver
         return count($segments) === 3 && strtolower($segments[1]) === 'as' ? $segments[2] : null;
     }
 
+    /**
+     * Returns the alias if $name is the bare `'as {alias}'` form (base aggregate key), or null otherwise.
+     */
+    public static function baseAlias(string $name): ?string
+    {
+        $parts = explode(' ', trim($name), 3);
+
+        return count($parts) === 2 && strtolower($parts[0]) === 'as' ? $parts[1] : null;
+    }
+
     public static function stripAlias(string $name): string
     {
         return (string) preg_replace('/\s+as\s+\S+$/i', '', $name);
     }
 
-    public function forRelation(string $relation, Expression|string $column, ?string $function): string
+    public function forRelation(string $relation, Expression|string $column, string $function): string
     {
         $explicit = self::explicitAlias($relation);
 
@@ -37,7 +47,7 @@ class AliasResolver
 
         $columnValue = strtolower((string) $columnValue);
 
-        return self::sanitizeToSnake(sprintf('%s %s %s', $relation, $function, $columnValue));
+        return $this->sanitizeToSnake(sprintf('%s %s %s', $relation, $function, $columnValue));
     }
 
     public function forColumn(Expression|string $column, string $function): string
@@ -55,13 +65,17 @@ class AliasResolver
 
         $columnValue = strtolower((string) $columnValue);
 
-        return self::sanitizeToSnake(sprintf('%s %s', $function, $columnValue));
+        return $this->sanitizeToSnake(sprintf('%s %s', $function, $columnValue));
     }
 
-    private static function sanitizeToSnake(string $raw): string
+    private function sanitizeToSnake(string $raw): string
     {
-        $sanitized = trim((string) preg_replace(['/[^[:alnum:][:space:]_]+/u', '/\s+/'], ['_', ' '], $raw), '_');
+        $sanitized = (string) preg_replace(
+            ['/[^[:alnum:][:space:]_]+/u', '/\s+/'],
+            ['_', ' '],
+            $raw
+        );
 
-        return str($sanitized)->snake()->value();
+        return str($sanitized)->trim('_')->snake()->value();
     }
 }

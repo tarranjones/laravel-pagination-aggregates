@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1] - 2026-03-17
+
+### Added
+- Allow `withCount()` and `withExists()` without a relation to target the current query
+- Allow single-argument `withMax/withMin/withSum/withAvg` to target the current query column
+- Lazy pagination execution until serialization (`toArray`, `toJson`, `toResponse`)
+
 ## [1.0.0] - 2026-03-13
 
 ### Added

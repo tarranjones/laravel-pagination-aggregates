@@ -6,6 +6,9 @@ namespace TarranJones\LaravelPaginationAggregates;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\Cursor;
+use TarranJones\LaravelPaginationAggregates\Pagination\CursorPaginator;
+use TarranJones\LaravelPaginationAggregates\Pagination\LengthAwarePaginator;
+use TarranJones\LaravelPaginationAggregates\Pagination\Paginator;
 
 class PaginatorFactory
 {
@@ -15,8 +18,8 @@ class PaginatorFactory
         array $columns = ['*'],
         string $pageName = 'page',
         ?int $page = null,
-    ): AggregateLengthAwarePaginator {
-        return new AggregateLengthAwarePaginator($builder, $perPage, $columns, $pageName, $page);
+    ): LengthAwarePaginator {
+        return new LengthAwarePaginator($builder, $perPage, $columns, $pageName, $page);
     }
 
     public static function simplePaginate(
@@ -25,8 +28,8 @@ class PaginatorFactory
         array $columns = ['*'],
         string $pageName = 'page',
         ?int $page = null,
-    ): AggregatePaginator {
-        return new AggregatePaginator($builder, $perPage, $columns, $pageName, $page);
+    ): Paginator {
+        return new Paginator($builder, $perPage, $columns, $pageName, $page);
     }
 
     public static function cursorPaginate(
@@ -35,7 +38,7 @@ class PaginatorFactory
         array $columns = ['*'],
         string $cursorName = 'cursor',
         Cursor|string|null $cursor = null,
-    ): AggregateCursorPaginator {
-        return new AggregateCursorPaginator($builder, $perPage, $columns, $cursorName, $cursor);
+    ): CursorPaginator {
+        return new CursorPaginator($builder, $perPage, $columns, $cursorName, $cursor);
     }
 }

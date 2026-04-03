@@ -68,9 +68,9 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
      */
     private function extractTotalFromAggregates(array $aggregates): ?int
     {
-        foreach ($this->coordinator->instructions() as $instruction) {
-            if ($instruction->function === 'count' && $instruction->relations === null) {
-                return (int) ($aggregates[$instruction->alias] ?? 0);
+        foreach ($this->coordinator->instructions() as $aggregateInstruction) {
+            if ($aggregateInstruction->function === 'count' && $aggregateInstruction->relations === null) {
+                return (int) ($aggregates[$aggregateInstruction->alias] ?? 0);
             }
         }
 

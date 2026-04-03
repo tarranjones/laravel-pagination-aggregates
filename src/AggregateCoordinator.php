@@ -18,80 +18,73 @@ class AggregateCoordinator
     /** @var array<string, mixed>|null */
     private ?array $cachedValues = null;
 
+    private ?AliasResolver $aliasResolver = null;
+
     public function __construct(private readonly Builder $builder) {}
 
-    public function withCount(
-        string|array|null $relations = null,
-        ?string $as = null,
-        ?Closure $constraint = null,
-    ): static {
+    public function withCount(string|array|null $relations = null, string|array ...$extra): static
+    {
         if ($relations === null) {
-            return $this->withAggregate(null, '*', 'count', $as, $constraint);
+            return $this->withAggregate(null, '*', 'count', null);
         }
 
-        $all = is_array($relations) ? $relations : [$relations];
-
-        return $this->withAggregate($all, '*', 'count');
+        return $this->withAggregate(
+            is_array($relations) ? $relations : [$relations, ...$extra],
+            '*',
+            'count',
+        );
     }
 
     public function withMax(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
-        ?string $as = null,
-        ?Closure $constraint = null,
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'max', $as, $constraint);
+        return $this->withAggregate($relation, $column, 'max', null);
     }
 
     public function withMin(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
-        ?string $as = null,
-        ?Closure $constraint = null,
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'min', $as, $constraint);
+        return $this->withAggregate($relation, $column, 'min', null);
     }
 
     public function withSum(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
-        ?string $as = null,
-        ?Closure $constraint = null,
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'sum', $as, $constraint);
+        return $this->withAggregate($relation, $column, 'sum', null);
     }
 
     public function withAvg(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
-        ?string $as = null,
-        ?Closure $constraint = null,
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'avg', $as, $constraint);
+        return $this->withAggregate($relation, $column, 'avg', null);
     }
 
-    public function withExists(
-        string|array|null $relations = null,
-        ?string $as = null,
-        ?Closure $constraint = null,
-    ): static {
+    public function withExists(string|array|null $relations = null, string|array ...$extra): static
+    {
         if ($relations === null) {
-            return $this->withAggregate(null, '*', 'exists', $as, $constraint);
+            return $this->withAggregate(null, '*', 'exists', null);
         }
 
-        $all = is_array($relations) ? $relations : [$relations];
-
-        return $this->withAggregate($all, '*', 'exists');
+        return $this->withAggregate(
+            is_array($relations) ? $relations : [$relations, ...$extra],
+            '*',
+            'exists',
+        );
     }
 
+    /** @return array<string, mixed> */
     public function resolve(): array
     {
         if ($this->cachedValues !== null) {
@@ -121,10 +114,9 @@ class AggregateCoordinator
         Expression|string $column,
         string $function,
         ?string $as = null,
-        ?Closure $constraint = null,
     ): static {
         if ($relations === null) {
-            return $this->addBaseAggregate($column, $function, $as, $constraint);
+            return $this->addBaseAggregate($column, $function, $as, null);
         }
 
         $relations = is_array($relations) ? $relations : [$relations];
@@ -158,7 +150,7 @@ class AggregateCoordinator
     }
 
     /**
-     * @param array<int|string, mixed> $relations
+     * @param  array<int|string, mixed>  $relations
      */
     private function addRelationAggregates(
         array $relations,
@@ -168,6 +160,17 @@ class AggregateCoordinator
         foreach ($relations as $name => $constraints) {
             if (! is_string($name)) {
                 [$name, $constraints] = [$constraints, null];
+            }
+
+            if ($baseAlias = AliasResolver::baseAlias($name)) {
+                $this->addBaseAggregate(
+                    $column,
+                    $function,
+                    $baseAlias,
+                    $constraints instanceof Closure ? $constraints : null,
+                );
+
+                continue;
             }
 
             $alias = AliasResolver::explicitAlias($name)
@@ -185,7 +188,7 @@ class AggregateCoordinator
 
     private function aliasResolver(): AliasResolver
     {
-        return new AliasResolver($this->builder->getQuery()->getGrammar());
+        return $this->aliasResolver ??= new AliasResolver($this->builder->getQuery()->getGrammar());
     }
 
     /**

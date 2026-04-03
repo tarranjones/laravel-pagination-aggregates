@@ -7,6 +7,7 @@ namespace TarranJones\LaravelPaginationAggregates\Resolvers;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasOneOrMany;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Collection;
 use TarranJones\LaravelPaginationAggregates\AggregateInstruction;
@@ -109,6 +110,9 @@ class AggregateResolver
         /** @var array<string, array{meta: array<string, mixed>, instructions: AggregateInstruction[]}> */
         $relAccum = [];
 
+        /** @var array<string, Relation> */
+        $relationCache = [];
+
         foreach ($instructions as $instruction) {
             if ($instruction->relations === null) {
                 $key = 'base:'.$this->constraintKey($instruction->constraint, clone $builder);
@@ -116,14 +120,14 @@ class AggregateResolver
                 if (! isset($baseAccum[$key])) {
                     $baseAccum[$key] = [
                         'meta' => [
-                            'type'           => 'base',
-                            'baseName'       => null,
-                            'constraints'    => $instruction->constraint,
-                            'table'          => $builder->getModel()->getTable(),
-                            'fk'             => null,
-                            'localKey'       => null,
+                            'type' => 'base',
+                            'baseName' => null,
+                            'constraints' => $instruction->constraint,
+                            'table' => $builder->getModel()->getTable(),
+                            'fk' => null,
+                            'localKey' => null,
                             'isHasOneOrMany' => true,
-                            'relation'       => null,
+                            'relation' => null,
                         ],
                         'instructions' => [],
                     ];
@@ -134,10 +138,10 @@ class AggregateResolver
                 continue;
             }
 
-            $name        = (string) array_key_first($instruction->relations);
+            $name = (string) array_key_first($instruction->relations);
             $constraints = $instruction->relations[$name];
-            $baseName    = AliasResolver::stripAlias($name);
-            $relation    = $builder->getModel()->newInstance()->{$baseName}();
+            $baseName = AliasResolver::stripAlias($name);
+            $relation = $relationCache[$baseName] ??= $builder->getModel()->newInstance()->{$baseName}();
             $isHasOneOrMany = $relation instanceof HasOneOrMany;
 
             $key = $baseName.':'.$this->relationConstraintKey($constraints, $relation);
@@ -145,14 +149,14 @@ class AggregateResolver
             if (! isset($relAccum[$key])) {
                 $relAccum[$key] = [
                     'meta' => [
-                        'type'           => 'relation',
-                        'baseName'       => $baseName,
-                        'constraints'    => $constraints,
-                        'table'          => $relation->getRelated()->getTable(),
-                        'fk'             => $isHasOneOrMany ? $relation->getForeignKeyName() : null,
-                        'localKey'       => $isHasOneOrMany ? $builder->getModel()->getQualifiedKeyName() : null,
+                        'type' => 'relation',
+                        'baseName' => $baseName,
+                        'constraints' => $constraints,
+                        'table' => $relation->getRelated()->getTable(),
+                        'fk' => $isHasOneOrMany ? $relation->getForeignKeyName() : null,
+                        'localKey' => $isHasOneOrMany ? $builder->getModel()->getQualifiedKeyName() : null,
                         'isHasOneOrMany' => $isHasOneOrMany,
-                        'relation'       => $relation,
+                        'relation' => $relation,
                     ],
                     'instructions' => [],
                 ];
@@ -163,8 +167,8 @@ class AggregateResolver
 
         $groups = [];
 
-        foreach (array_reverse($baseAccum) as $item) {
-            array_unshift($groups, new InstructionGroup(...$item['meta'], instructions: $item['instructions']));
+        foreach ($baseAccum as $item) {
+            $groups[] = new InstructionGroup(...$item['meta'], instructions: $item['instructions']);
         }
 
         foreach ($relAccum as $item) {
@@ -174,15 +178,15 @@ class AggregateResolver
         return $groups;
     }
 
-    private function constraintKey(?Closure $constraint, Builder $tempQuery): string
+    private function constraintKey(?Closure $constraint, Builder $builder): string
     {
-        if ($constraint === null) {
+        if (! $constraint instanceof Closure) {
             return 'none';
         }
 
-        $constraint($tempQuery);
+        $constraint($builder);
 
-        return md5($tempQuery->toSql().serialize($tempQuery->getBindings()));
+        return md5($builder->toSql().serialize($builder->getBindings()));
     }
 
     private function relationConstraintKey(mixed $constraints, mixed $relation): string
@@ -225,9 +229,9 @@ class AggregateResolver
      *
      * @param  array<string, string|array>  $existsCols
      */
-    private function resolveBaseResult(AggregateInstruction $instruction, Collection $results, array $existsCols): mixed
+    private function resolveBaseResult(AggregateInstruction $aggregateInstruction, Collection $results, array $existsCols): mixed
     {
-        $alias   = $instruction->alias;
+        $alias = $aggregateInstruction->alias;
         $colInfo = $existsCols[$alias] ?? null;
 
         if ($colInfo === null) {
@@ -236,13 +240,12 @@ class AggregateResolver
 
         if (is_array($colInfo)) {
             // AVG: stored as SUM/COUNT pair
-            $sum   = $results->first()->getAttribute($colInfo['sum']);
+            $sum = $results->first()->getAttribute($colInfo['sum']);
             $count = $results->first()->getAttribute($colInfo['count']);
 
             return $count > 0 ? $sum / $count : null;
         }
 
-        // base_exists
         return (bool) ($results->first()->getAttribute($alias) ?? 0);
     }
 
@@ -251,20 +254,20 @@ class AggregateResolver
      *
      * @param  array<string, string|array>  $existsCols
      */
-    private function resolveRelationResult(AggregateInstruction $instruction, Collection $results, array $existsCols): mixed
+    private function resolveRelationResult(AggregateInstruction $aggregateInstruction, Collection $results, array $existsCols): mixed
     {
-        $alias   = $instruction->alias;
+        $alias = $aggregateInstruction->alias;
         $colInfo = $existsCols[$alias] ?? null;
 
         if ($colInfo === null) {
             $values = $results->pluck($alias);
 
-            return match ($instruction->function) {
+            return match ($aggregateInstruction->function) {
                 'count', 'sum' => $values->sum(),
-                'max'          => $values->max(),
-                'min'          => $values->min(),
-                'exists'       => (bool) $values->filter()->count(),
-                default        => null,
+                'max' => $values->max(),
+                'min' => $values->min(),
+                'exists' => (bool) $values->filter()->count(),
+                default => null,
             };
         }
 
@@ -275,7 +278,7 @@ class AggregateResolver
             }
 
             // AVG: global sum/count across all rows
-            $totalSum   = $results->sum($colInfo['sum']);
+            $totalSum = $results->sum($colInfo['sum']);
             $totalCount = $results->sum($colInfo['count']);
 
             return $totalCount > 0 ? $totalSum / $totalCount : null;
