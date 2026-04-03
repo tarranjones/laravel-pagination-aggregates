@@ -272,7 +272,7 @@ Comment::query()->lazyPaginate(20)->withMax('votes')->withMin('votes')->withSum(
 ```
 
 ```sql
-SELECT `comments`.*,
+SELECT `comments`.`id`,
        `agg_comments`.`max_votes`,
        `agg_comments`.`min_votes`,
        `agg_comments`.`sum_votes`
@@ -294,7 +294,7 @@ Post::query()->lazyPaginate(15)->withMax('comments', 'votes')->withMin('comments
 ```
 
 ```sql
-SELECT `posts`.*,
+SELECT `posts`.`id`,
        `agg_comments`.`comments_max_votes`,
        `agg_comments`.`comments_min_votes`
 FROM `posts`
