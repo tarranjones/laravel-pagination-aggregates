@@ -38,9 +38,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 $posts = Post::query()
     ->lazyPaginate(20)
-    ->withCount(['comments as approved_comments' => fn (Builder $q) => $q->where('status', 'approved')])
-    ->withCount(['comments as pending_comments'  => fn (Builder $q) => $q->where('status', 'pending')])
-    ->withCount(['comments as rejected_comments' => fn (Builder $q) => $q->where('status', 'rejected')]);
+    ->withCount([
+        'comments as approved_comments' => fn (Builder $q) => $q->where('status', 'approved'),
+        'comments as pending_comments'  => fn (Builder $q) => $q->where('status', 'pending'),
+        'comments as rejected_comments' => fn (Builder $q) => $q->where('status', 'rejected'),
+    ]);
 ```
 
 ```json
@@ -64,10 +66,12 @@ use Illuminate\Database\Eloquent\Builder;
 
 $orders = Order::query()
     ->lazyPaginate(25)
-    ->withCount(['as pending'    => fn (Builder $q) => $q->where('status', 'pending')])
-    ->withCount(['as processing' => fn (Builder $q) => $q->where('status', 'processing')])
-    ->withCount(['as shipped'    => fn (Builder $q) => $q->where('status', 'shipped')])
-    ->withCount(['as delivered'  => fn (Builder $q) => $q->where('status', 'delivered')]);
+    ->withCount([
+        'as pending'    => fn (Builder $q) => $q->where('status', 'pending'),
+        'as processing' => fn (Builder $q) => $q->where('status', 'processing'),
+        'as shipped'    => fn (Builder $q) => $q->where('status', 'shipped'),
+        'as delivered'  => fn (Builder $q) => $q->where('status', 'delivered'),
+    ]);
 ```
 
 ```json
@@ -103,8 +107,10 @@ Call `aggregate()` to resolve and return the aggregate values without serializin
 ```php
 $paginator = Order::query()
     ->lazyPaginate(25)
-    ->withCount(['as pending'   => fn (Builder $q) => $q->where('status', 'pending')])
-    ->withCount(['as delivered' => fn (Builder $q) => $q->where('status', 'delivered')]);
+    ->withCount([
+        'as pending'   => fn (Builder $q) => $q->where('status', 'pending'),
+        'as delivered' => fn (Builder $q) => $q->where('status', 'delivered'),
+    ]);
 
 $paginator->aggregate();
 
@@ -148,10 +154,12 @@ Use the array form `['as alias' => fn]` to apply a constraint to a base aggregat
 ```php
 Order::query()
     ->lazyPaginate(25)
-    ->withCount(['as pending'    => fn (Builder $q) => $q->where('status', 'pending')])
-    ->withCount(['as processing' => fn (Builder $q) => $q->where('status', 'processing')])
-    ->withCount(['as shipped'    => fn (Builder $q) => $q->where('status', 'shipped')])
-    ->withCount(['as delivered'  => fn (Builder $q) => $q->where('status', 'delivered')]);
+    ->withCount([
+        'as pending'    => fn (Builder $q) => $q->where('status', 'pending'),
+        'as processing' => fn (Builder $q) => $q->where('status', 'processing'),
+        'as shipped'    => fn (Builder $q) => $q->where('status', 'shipped'),
+        'as delivered'  => fn (Builder $q) => $q->where('status', 'delivered'),
+    ]);
 ```
 
 The same syntax works for all numeric aggregates — pass the column as the second argument:
@@ -210,8 +218,10 @@ Pass a closure as the array value to scope the relation aggregate query:
 ```php
 use Illuminate\Database\Eloquent\Builder;
 
-->withCount(['comments as approved_comments' => fn (Builder $q) => $q->where('status', 'approved')])
-->withCount(['comments as pending_comments'  => fn (Builder $q) => $q->where('status', 'pending')])
+->withCount([
+    'comments as approved_comments' => fn (Builder $q) => $q->where('status', 'approved'),
+    'comments as pending_comments'  => fn (Builder $q) => $q->where('status', 'pending'),
+])
 ```
 
 Combine alias and constraint in a single array key for numeric aggregates:
