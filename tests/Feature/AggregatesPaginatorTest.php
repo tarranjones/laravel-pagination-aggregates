@@ -165,6 +165,27 @@ it('defers pagination queries until serialization', function (): void {
     expect(count($queries))->toBe(3);
 });
 
+it('constrained withCount does not replace the paginator total', function (): void {
+    DB::enableQueryLog();
+
+    $paginator = Post::query()
+        ->orderBy('id')
+        ->lazyPaginate(1)
+        ->withCount(['as first_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')]);
+
+    $payload = $paginator->toArray();
+
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    // Query 1: constrained count aggregate
+    // Query 2: COUNT(*) for paginator total (must still fire — constrained count must not replace it)
+    // Query 3: paginated data
+    expect(count($queries))->toBe(3)
+        ->and($payload['total'])->toBe(2)
+        ->and($payload['aggregates']['first_count'])->toBe(1);
+});
+
 it('uses withCount() aggregate as the paginator total, skipping the COUNT(*) query', function (): void {
     DB::enableQueryLog();
 
