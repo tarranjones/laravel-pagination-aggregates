@@ -66,11 +66,15 @@ trait AggregatesPaginator
 
     public function aggregate(): static
     {
+        if ($this->aggregates !== null) {
+            return $this;
+        }
+
         if (method_exists($this, 'initializePaginator')) {
             $this->initializePaginator();
         }
 
-        $this->aggregates = array_merge($this->aggregates ?? [], $this->coordinator->resolve());
+        $this->aggregates = $this->coordinator->resolve();
 
         return $this;
     }
