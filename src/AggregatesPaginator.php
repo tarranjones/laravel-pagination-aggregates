@@ -61,6 +61,18 @@ trait AggregatesPaginator
         return $this;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function aggregate(): array
+    {
+        if (method_exists($this, 'initializePaginator')) {
+            $this->initializePaginator();
+        }
+
+        return $this->coordinator->resolve();
+    }
+
     #[Override]
     public function toArray(): array
     {
