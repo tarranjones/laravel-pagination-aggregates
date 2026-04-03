@@ -24,11 +24,11 @@ beforeEach(function (): void {
         $blueprint->integer('votes');
     });
 
-    SqlPost::query()->create(['title' => 'A']);
-    SqlPost::query()->create(['title' => 'B']);
-    SqlComment::query()->create(['sql_post_id' => 1, 'votes' => 3]);
-    SqlComment::query()->create(['sql_post_id' => 1, 'votes' => 5]);
-    SqlComment::query()->create(['sql_post_id' => 2, 'votes' => 2]);
+    $postA = SqlPost::query()->create(['title' => 'A']);
+    $postB = SqlPost::query()->create(['title' => 'B']);
+    SqlComment::query()->create(['sql_post_id' => $postA->id, 'votes' => 3]);
+    SqlComment::query()->create(['sql_post_id' => $postA->id, 'votes' => 5]);
+    SqlComment::query()->create(['sql_post_id' => $postB->id, 'votes' => 2]);
 });
 
 /**
@@ -44,15 +44,16 @@ function captureQueries(Closure $fn): array
     $log = DB::getQueryLog();
     DB::disableQueryLog();
 
-    return array_map(function (array $entry): string {
-        $sql = $entry['query'];
-        foreach ($entry['bindings'] as $binding) {
-            $value = is_string($binding) ? sprintf("'%s'", $binding) : (string) $binding;
-            $sql = preg_replace('/\?/', $value, $sql, 1);
-        }
-
-        return $sql;
-    }, $log);
+    return array_map(fn (array $entry): string => array_reduce(
+        $entry['bindings'],
+        fn (string $sql, mixed $binding): string => (string) preg_replace(
+            '/\?/',
+            is_string($binding) ? sprintf("'%s'", $binding) : (string) $binding,
+            $sql,
+            1,
+        ),
+        $entry['query'],
+    ), $log);
 }
 
 // ─── Single base aggregate ────────────────────────────────────────────────────

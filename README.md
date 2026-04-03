@@ -172,7 +172,7 @@ The same syntax works for all numeric aggregates — pass the column as the seco
 Each unique constraint becomes its own CROSS JOIN derived table. Aggregates that share the same constraint are batched together into one subquery:
 
 ```sql
-SELECT `orders`.*,
+SELECT `orders`.`id`,
        `agg_orders`.`pending`,
        `agg_orders_2`.`processing`
 FROM `orders`
