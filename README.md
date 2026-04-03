@@ -87,6 +87,24 @@ Order::query()->lazyCursorPaginate($perPage);   // CursorPaginator
 
 Pagination queries are deferred until serialization (`toArray()`, `toJson()`, or `toResponse()`). No database queries run until you need the data.
 
+### Resolving aggregates directly
+
+Call `aggregate()` to resolve and return the aggregate values without serializing the full paginator:
+
+```php
+$paginator = Order::query()->whereDate('created_at', today())->lazyPaginate(25)
+    ->withCount()
+    ->withSum('total as revenue');
+
+$aggregates = $paginator->aggregate();
+// ['count' => 98, 'revenue' => 14350.00]
+
+$totalOrders = $aggregates['count'];
+$totalRevenue = $aggregates['revenue'];
+```
+
+The result is cached — if you later call `toArray()` or serialize the paginator, the aggregate queries do not run again.
+
 ### Base query aggregates
 
 Aggregate over the paginator's own base query — any `where`, scope, or date filter applied to the builder is automatically reflected in the totals.
