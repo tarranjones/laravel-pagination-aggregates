@@ -28,47 +28,60 @@ composer require tarranjones/laravel-pagination-aggregates
 
 ## Quick start
 
-An order management dashboard — today's orders, paginated, with status breakdowns across the full dataset:
+### Relation attribute counts by type
+
+Count a related model's records broken down by a status or type attribute. Each entry in the array becomes a separate aggregate keyed by its alias:
+
+```php
+use App\Models\Post;
+use Illuminate\Database\Eloquent\Builder;
+
+$posts = Post::query()
+    ->lazyPaginate(20)
+    ->withCount([
+        'comments as approved_comments' => fn (Builder $q) => $q->where('status', 'approved'),
+        'comments as pending_comments'  => fn (Builder $q) => $q->where('status', 'pending'),
+        'comments as rejected_comments' => fn (Builder $q) => $q->where('status', 'rejected'),
+    ]);
+```
+
+```json
+{
+    "data": [...],
+    "aggregates": {
+        "approved_comments": 42,
+        "pending_comments": 15,
+        "rejected_comments": 8
+    }
+}
+```
+
+### Table attribute counts by type
+
+Count rows in the paginated table itself broken down by a column value. The `'as alias'` key scopes each count to its constraint — all are batched into a single query:
 
 ```php
 use App\Models\Order;
 use Illuminate\Database\Eloquent\Builder;
 
 $orders = Order::query()
-    ->whereDate('created_at', today())
     ->lazyPaginate(25)
-    ->withCount()                                             // total orders today
-    ->withSum('total as revenue')                            // total revenue today
-    ->withCount(['as pending_count'
-        => fn (Builder $q) => $q->where('status', 'pending')])
-    ->withSum(['as pending_value'
-        => fn (Builder $q) => $q->where('status', 'pending')], 'price')
-    ->withCount(['as processing_count'
-        => fn (Builder $q) => $q->where('status', 'processing')])
-    ->withCount(['as complete_count'
-        => fn (Builder $q) => $q->where('status', 'complete')])
-    ->withSum(['as complete_value'
-        => fn (Builder $q) => $q->where('status', 'complete')], 'price')
-    ->withCount(['as cancelled_count'
-        => fn (Builder $q) => $q->where('status', 'cancelled')]);
+    ->withCount([
+        'as pending'    => fn (Builder $q) => $q->where('status', 'pending'),
+        'as processing' => fn (Builder $q) => $q->where('status', 'processing'),
+        'as shipped'    => fn (Builder $q) => $q->where('status', 'shipped'),
+        'as delivered'  => fn (Builder $q) => $q->where('status', 'delivered'),
+    ]);
 ```
 
 ```json
 {
     "data": [...],
-    "current_page": 1,
-    "last_page": 4,
-    "per_page": 25,
-    "total": 98,
     "aggregates": {
-        "count": 98,
-        "revenue": 14350.00,
-        "pending_count": 23,
-        "pending_value": 3420.00,
-        "processing_count": 18,
-        "complete_count": 34,
-        "complete_value": 8750.00,
-        "cancelled_count": 23
+        "pending": 23,
+        "processing": 18,
+        "shipped": 31,
+        "delivered": 76
     }
 }
 ```
@@ -92,15 +105,17 @@ Pagination queries are deferred until serialization (`toArray()`, `toJson()`, or
 Call `aggregate()` to resolve and return the aggregate values without serializing the full paginator:
 
 ```php
-$paginator = Order::query()->whereDate('created_at', today())->lazyPaginate(25)
-    ->withCount()
-    ->withSum('total as revenue');
+$paginator = Order::query()
+    ->lazyPaginate(25)
+    ->withCount([
+        'as pending'   => fn (Builder $q) => $q->where('status', 'pending'),
+        'as delivered' => fn (Builder $q) => $q->where('status', 'delivered'),
+    ]);
 
-$aggregates = $paginator->aggregate();
-// ['count' => 98, 'revenue' => 14350.00]
+$paginator->aggregate();
 
-$totalOrders = $aggregates['count'];
-$totalRevenue = $aggregates['revenue'];
+$pending   = $paginator->aggregates['pending'];
+$delivered = $paginator->aggregates['delivered'];
 ```
 
 The result is cached — if you later call `toArray()` or serialize the paginator, the aggregate queries do not run again.
@@ -137,31 +152,33 @@ Use `'column as alias'` to control the output key:
 Use the array form `['as alias' => fn]` to apply a constraint to a base aggregate. Multiple entries are batched into a single query:
 
 ```php
-Comment::query()
-    ->lazyPaginate(20)
-    ->withCount(['as approved_count' => fn (Builder $q) => $q->where('approved', true)])
-    ->withCount(['as pending_count'  => fn (Builder $q) => $q->where('approved', false)]);
+Order::query()
+    ->lazyPaginate(25)
+    ->withCount([
+        'as pending'    => fn (Builder $q) => $q->where('status', 'pending'),
+        'as processing' => fn (Builder $q) => $q->where('status', 'processing'),
+        'as shipped'    => fn (Builder $q) => $q->where('status', 'shipped'),
+        'as delivered'  => fn (Builder $q) => $q->where('status', 'delivered'),
+    ]);
 ```
 
 The same syntax works for all numeric aggregates — pass the column as the second argument:
 
 ```php
-->withSum(['as high_votes' => fn (Builder $q) => $q->where('votes', '>', 10)], 'votes')
-->withMax(['as recent_max' => fn (Builder $q) => $q->whereDate('created_at', today())], 'votes')
+->withSum(['as high_value' => fn (Builder $q) => $q->where('total', '>', 1000)], 'total')
+->withMax(['as todays_max' => fn (Builder $q) => $q->whereDate('created_at', today())], 'total')
 ```
 
-**Queries fired for the example above (2 base aggregates with different constraints):**
+Each unique constraint becomes its own CROSS JOIN derived table. Aggregates that share the same constraint are batched together into one subquery:
 
 ```sql
--- Constraint group 1: approved comments
-SELECT (CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END) AS `approved_count`
-FROM `comments`
-WHERE `approved` = 1
-
--- Constraint group 2: pending comments (batched separately — different constraint)
-SELECT COUNT(*) AS `pending_count`
-FROM `comments`
-WHERE `approved` = 0
+SELECT `orders`.`id`,
+       `agg_orders`.`pending`,
+       `agg_orders_2`.`processing`
+FROM `orders`
+CROSS JOIN (SELECT COUNT(*) AS `pending` FROM `orders` WHERE `status` = 'pending') AS `agg_orders`
+CROSS JOIN (SELECT COUNT(*) AS `processing` FROM `orders` WHERE `status` = 'processing') AS `agg_orders_2`
+-- etc.
 ```
 
 ### Relation aggregates
@@ -204,14 +221,17 @@ Pass a closure as the array value to scope the relation aggregate query:
 ```php
 use Illuminate\Database\Eloquent\Builder;
 
-->withCount(['comments' => fn (Builder $q) => $q->where('approved', true)])
+->withCount([
+    'comments as approved_comments' => fn (Builder $q) => $q->where('status', 'approved'),
+    'comments as pending_comments'  => fn (Builder $q) => $q->where('status', 'pending'),
+])
 ```
 
-Combine alias and constraint in a single array key:
+Combine alias and constraint in a single array key for numeric aggregates:
 
 ```php
-->withMax(
-    ['comments as top_approved_vote' => fn (Builder $q) => $q->where('approved', true)],
+->withSum(
+    ['comments as approved_vote_total' => fn (Builder $q) => $q->where('status', 'approved')],
     'votes',
 )
 ```
@@ -253,16 +273,16 @@ Comment::query()->lazyPaginate(20)->withMax('votes')->withMin('votes')->withSum(
 
 ```sql
 SELECT `comments`.`id`,
-       `pag_comments`.`max_votes`,
-       `pag_comments`.`min_votes`,
-       `pag_comments`.`sum_votes`
+       `agg_comments`.`max_votes`,
+       `agg_comments`.`min_votes`,
+       `agg_comments`.`sum_votes`
 FROM `comments`
 CROSS JOIN (
   SELECT MAX(`votes`) AS `max_votes`,
          MIN(`votes`) AS `min_votes`,
          SUM(`votes`) AS `sum_votes`
   FROM `comments`
-) AS `pag_comments`
+) AS `agg_comments`
 ```
 
 ### HasOneOrMany relation — LEFT JOIN derived table
@@ -275,8 +295,8 @@ Post::query()->lazyPaginate(15)->withMax('comments', 'votes')->withMin('comments
 
 ```sql
 SELECT `posts`.`id`,
-       `pag_comments`.`comments_max_votes`,
-       `pag_comments`.`comments_min_votes`
+       `agg_comments`.`comments_max_votes`,
+       `agg_comments`.`comments_min_votes`
 FROM `posts`
 LEFT JOIN (
   SELECT `post_id`,
@@ -284,7 +304,7 @@ LEFT JOIN (
          MIN(`votes`) AS `comments_min_votes`
   FROM `comments`
   GROUP BY `post_id`
-) AS `pag_comments` ON `pag_comments`.`post_id` = `posts`.`id`
+) AS `agg_comments` ON `agg_comments`.`post_id` = `posts`.`id`
 ```
 
 ### BelongsToMany and other relation types

@@ -246,7 +246,7 @@ class AggregateResolver
             return $count > 0 ? $sum / $count : null;
         }
 
-        return (bool) ($results->first()->getAttribute($alias) ?? 0);
+        return (bool) ($results->first()->getAttribute($colInfo) ?? 0);
     }
 
     /**
@@ -295,7 +295,7 @@ class AggregateResolver
      * the query computes the global average across all parent IDs rather than a
      * correlated per-row result.
      */
-    private function resolveNonHasOneOrManyAvg(mixed $relation, ?Closure $constraints, mixed $column, Builder $builder): mixed
+    private function resolveNonHasOneOrManyAvg(Relation $relation, ?Closure $constraints, Expression|string $column, Builder $builder): mixed
     {
         $existenceQuery = $relation->getRelationExistenceQuery(
             $relation->getRelated()->newQuery(),

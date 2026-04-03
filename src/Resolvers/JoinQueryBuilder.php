@@ -64,12 +64,13 @@ class JoinQueryBuilder
             $wrappedCol = $this->wrapColumn($instruction->column, $grammar);
 
             if ($instruction->function === 'exists') {
-                $subSelects[] = sprintf('(CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END) AS %s', $grammar->wrap($alias));
-                $existsCols[$alias] = '_pag_base_exists';
-                $query->addSelect(sprintf('%s.%s', $jAlias, $alias));
+                $cntCol = '_agg_ecnt_'.$alias;
+                $subSelects[] = sprintf('COUNT(*) AS %s', $grammar->wrap($cntCol));
+                $existsCols[$alias] = $cntCol;
+                $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
             } elseif ($instruction->function === 'avg') {
-                $sumCol = '_pag_sum_'.$alias;
-                $cntCol = '_pag_cnt_'.$alias;
+                $sumCol = '_agg_sum_'.$alias;
+                $cntCol = '_agg_cnt_'.$alias;
                 $subSelects[] = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
                 $subSelects[] = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
                 $existsCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
@@ -153,13 +154,13 @@ class JoinQueryBuilder
             $wrappedCol = $this->wrapColumn($instruction->column, $grammar);
 
             if ($instruction->function === 'exists') {
-                $cntCol = '_pag_ecnt_'.$alias;
+                $cntCol = '_agg_ecnt_'.$alias;
                 $subSelects[] = sprintf('COUNT(*) AS %s', $grammar->wrap($cntCol));
                 $existsCols[$alias] = $cntCol;
                 $builder->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
             } elseif ($instruction->function === 'avg') {
-                $sumCol = '_pag_sum_'.$alias;
-                $cntCol = '_pag_cnt_'.$alias;
+                $sumCol = '_agg_sum_'.$alias;
+                $cntCol = '_agg_cnt_'.$alias;
                 $subSelects[] = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
                 $subSelects[] = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
                 $avgCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
@@ -192,7 +193,7 @@ class JoinQueryBuilder
     {
         $count = ($counters[$baseName] = ($counters[$baseName] ?? 0) + 1);
 
-        return $count === 1 ? 'pag_'.$baseName : 'pag_'.$baseName.'_'.$count;
+        return $count === 1 ? 'agg_'.$baseName : 'agg_'.$baseName.'_'.$count;
     }
 
     private function wrapColumn(Expression|string|null $column, Grammar $grammar): string
