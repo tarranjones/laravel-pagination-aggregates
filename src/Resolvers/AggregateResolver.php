@@ -246,7 +246,7 @@ class AggregateResolver
             return $count > 0 ? $sum / $count : null;
         }
 
-        return (bool) ($results->first()->getAttribute($alias) ?? 0);
+        return (bool) ($results->first()->getAttribute($colInfo) ?? 0);
     }
 
     /**

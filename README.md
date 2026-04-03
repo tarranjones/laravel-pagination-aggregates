@@ -253,16 +253,16 @@ Comment::query()->lazyPaginate(20)->withMax('votes')->withMin('votes')->withSum(
 
 ```sql
 SELECT `comments`.`id`,
-       `pag_comments`.`max_votes`,
-       `pag_comments`.`min_votes`,
-       `pag_comments`.`sum_votes`
+       `agg_comments`.`max_votes`,
+       `agg_comments`.`min_votes`,
+       `agg_comments`.`sum_votes`
 FROM `comments`
 CROSS JOIN (
   SELECT MAX(`votes`) AS `max_votes`,
          MIN(`votes`) AS `min_votes`,
          SUM(`votes`) AS `sum_votes`
   FROM `comments`
-) AS `pag_comments`
+) AS `agg_comments`
 ```
 
 ### HasOneOrMany relation — LEFT JOIN derived table
@@ -275,8 +275,8 @@ Post::query()->lazyPaginate(15)->withMax('comments', 'votes')->withMin('comments
 
 ```sql
 SELECT `posts`.`id`,
-       `pag_comments`.`comments_max_votes`,
-       `pag_comments`.`comments_min_votes`
+       `agg_comments`.`comments_max_votes`,
+       `agg_comments`.`comments_min_votes`
 FROM `posts`
 LEFT JOIN (
   SELECT `post_id`,
@@ -284,7 +284,7 @@ LEFT JOIN (
          MIN(`votes`) AS `comments_min_votes`
   FROM `comments`
   GROUP BY `post_id`
-) AS `pag_comments` ON `pag_comments`.`post_id` = `posts`.`id`
+) AS `agg_comments` ON `agg_comments`.`post_id` = `posts`.`id`
 ```
 
 ### BelongsToMany and other relation types
