@@ -169,12 +169,15 @@ The same syntax works for all numeric aggregates — pass the column as the seco
 ->withMax(['as todays_max' => fn (Builder $q) => $q->whereDate('created_at', today())], 'total')
 ```
 
-Each unique constraint becomes its own query. Aggregates that share the same constraint are batched together:
+Each unique constraint becomes its own CROSS JOIN derived table. Aggregates that share the same constraint are batched together into one subquery:
 
 ```sql
--- Each status constraint fires separately
-SELECT COUNT(*) AS `_agg_ecnt_pending` FROM `orders` WHERE `status` = 'pending'
-SELECT COUNT(*) AS `_agg_ecnt_processing` FROM `orders` WHERE `status` = 'processing'
+SELECT `orders`.*,
+       `agg_orders`.`pending`,
+       `agg_orders_2`.`processing`
+FROM `orders`
+CROSS JOIN (SELECT COUNT(*) AS `pending` FROM `orders` WHERE `status` = 'pending') AS `agg_orders`
+CROSS JOIN (SELECT COUNT(*) AS `processing` FROM `orders` WHERE `status` = 'processing') AS `agg_orders_2`
 -- etc.
 ```
 
