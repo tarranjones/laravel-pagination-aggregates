@@ -12,7 +12,7 @@ trait AggregatesPaginator
     protected AggregateCoordinator $coordinator;
 
     /** @var array<string, mixed>|null */
-    public ?array $aggregates = null;
+    public private(set) ?array $aggregates = null;
 
     public function withCount(string|array|null $relations = null, string|array ...$extra): static
     {
