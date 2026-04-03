@@ -600,3 +600,18 @@ it('aggregate() result is cached — calling toArray() afterwards does not re-ru
     expect($aggregates)->toHaveKey('count')
         ->and($queryCountAfterToArray)->toBe($queryCountAfterAggregate); // aggregate already resolved — no extra queries
 });
+it('aggregate() works on lazySimplePaginate', function (): void {
+    $result = Post::query()->lazySimplePaginate(5)->withCount()->aggregate();
+
+    expect($result)->toBeArray()
+        ->and($result)->toHaveKey('count')
+        ->and($result['count'])->toBe(Post::count());
+});
+
+it('aggregate() works on lazyCursorPaginate', function (): void {
+    $result = Post::query()->lazyCursorPaginate(5)->withCount()->aggregate();
+
+    expect($result)->toBeArray()
+        ->and($result)->toHaveKey('count')
+        ->and($result['count'])->toBe(Post::count());
+});
