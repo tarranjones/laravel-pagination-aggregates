@@ -69,28 +69,30 @@ it('single base withCount fires a scalar COUNT and a paginate query', function (
     ]);
 });
 
-it('single base withSum fires a scalar SUM, a COUNT total, and a paginate query', function (): void {
+it('single base withSum is batched with the paginator total into one CROSS JOIN, saving a COUNT query', function (): void {
     $queries = captureQueries(
         fn () => SqlComment::query()->lazyPaginate(5)->withSum('votes')->toArray()
     );
 
-    expect($queries)->toBe([
-        'select sum("votes") as aggregate from "sql_comments"',
-        'select count(*) as aggregate from "sql_comments"',
-        'select * from "sql_comments" limit 5 offset 0',
-    ]);
+    // Only 2 queries: CROSS JOIN (SUM + injected total) + data page — no separate COUNT(*)
+    expect($queries)->toHaveCount(2)
+        ->and($queries[0])->toBe(
+            'select "sql_comments"."id", "agg_sql_comments"."sum_votes", "agg_sql_comments"."__paginator_total" from "sql_comments" cross join (select SUM("votes") AS "sum_votes", COUNT(*) AS "__paginator_total" from "sql_comments") as "agg_sql_comments"'
+        );
 });
 
 // ─── Multiple base aggregates (same constraint) — CROSS JOIN ─────────────────
 
-it('multiple base aggregates are batched into a single CROSS JOIN derived table', function (): void {
+it('multiple base aggregates and the paginator total are batched into a single CROSS JOIN', function (): void {
     $queries = captureQueries(
         fn () => SqlComment::query()->lazyPaginate(5)->withMax('votes')->withMin('votes')->toArray()
     );
 
-    expect($queries[0])->toBe(
-        'select "sql_comments"."id", "agg_sql_comments"."max_votes", "agg_sql_comments"."min_votes" from "sql_comments" cross join (select MAX("votes") AS "max_votes", MIN("votes") AS "min_votes" from "sql_comments") as "agg_sql_comments"'
-    );
+    // 2 queries: CROSS JOIN (MAX + MIN + injected total) + data page
+    expect($queries)->toHaveCount(2)
+        ->and($queries[0])->toBe(
+            'select "sql_comments"."id", "agg_sql_comments"."max_votes", "agg_sql_comments"."min_votes", "agg_sql_comments"."__paginator_total" from "sql_comments" cross join (select MAX("votes") AS "max_votes", MIN("votes") AS "min_votes", COUNT(*) AS "__paginator_total" from "sql_comments") as "agg_sql_comments"'
+        );
 });
 
 it('withCount paired with withExists batches both into one CROSS JOIN derived table', function (): void {
@@ -171,12 +173,13 @@ it('withCount reuses the aggregate as the LengthAwarePaginator total, saving a C
         ->and($queries[1])->toBe('select * from "sql_posts" limit 5 offset 0');
 });
 
-it('without withCount three queries fire: aggregate + COUNT total + data page', function (): void {
+it('unconstrained base aggregate is batched with the paginator total, saving a COUNT query', function (): void {
     $queries = captureQueries(
         fn () => SqlPost::query()->lazyPaginate(5)->withMax('id')->toArray()
     );
 
-    expect($queries)->toHaveCount(3);
+    // 2 queries: CROSS JOIN (MAX + injected total) + data page
+    expect($queries)->toHaveCount(2);
 });
 
 it('withCount on a relation does not save the COUNT total query — three queries fire', function (): void {

@@ -109,6 +109,39 @@ class AggregateCoordinator
         return $this->builder;
     }
 
+    /**
+     * Returns true when at least one instruction targets the base query with no constraint.
+     * Used by LengthAwarePaginator to decide whether to inject a paginator total.
+     */
+    public function hasUnconstrainedBaseAggregates(): bool
+    {
+        return array_any($this->instructions, fn ($instruction): bool => $instruction->relations === null && $instruction->constraint === null);
+    }
+
+    /**
+     * Returns true when an unconstrained base COUNT(*) instruction already exists.
+     * When true, LengthAwarePaginator reuses it as the paginator total instead of injecting one.
+     */
+    public function hasUnconstrainedBaseCount(): bool
+    {
+        return array_any($this->instructions, fn ($instruction): bool => $instruction->function === 'count'
+            && $instruction->relations === null
+            && $instruction->constraint === null);
+    }
+
+    /**
+     * Inject a hidden COUNT(*) instruction with the given alias so it is batched into the
+     * same unconstrained CROSS JOIN derived table as any other base aggregates.
+     * For internal use by LengthAwarePaginator only.
+     */
+    public function withPaginatorTotal(string $alias): static
+    {
+        $this->instructions[] = new AggregateInstruction('count', $alias, '*', null);
+        $this->cachedValues = null;
+
+        return $this;
+    }
+
     private function withAggregate(
         string|array|null $relations,
         Expression|string $column,
