@@ -124,7 +124,16 @@ class AggregateCoordinator
      */
     public function hasUnconstrainedBaseCount(): bool
     {
-        return array_any($this->instructions, fn ($instruction): bool => $instruction->function === 'count'
+        return $this->findUnconstrainedBaseCountInstruction() instanceof AggregateInstruction;
+    }
+
+    /**
+     * Returns the first unconstrained base COUNT(*) instruction, or null if none exists.
+     * Used to locate the alias when extracting the paginator total from aggregate results.
+     */
+    public function findUnconstrainedBaseCountInstruction(): ?AggregateInstruction
+    {
+        return array_find($this->instructions, fn ($instruction): bool => $instruction->function === 'count'
             && $instruction->relations === null
             && $instruction->constraint === null);
     }

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator as BaseLengthAwarePaginator;
 use Illuminate\Pagination\Paginator as PagePaginator;
 use TarranJones\LaravelPaginationAggregates\AggregateCoordinator;
+use TarranJones\LaravelPaginationAggregates\AggregateInstruction;
 use TarranJones\LaravelPaginationAggregates\AggregatesPaginator;
 
 class LengthAwarePaginator extends BaseLengthAwarePaginator
@@ -110,14 +111,8 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
         }
 
         // Fall back to a user-defined unconstrained base COUNT (e.g. ->withCount()).
-        foreach ($this->coordinator->instructions() as $aggregateInstruction) {
-            if ($aggregateInstruction->function === 'count'
-                && $aggregateInstruction->relations === null
-                && $aggregateInstruction->constraint === null) {
-                return (int) ($aggregates[$aggregateInstruction->alias] ?? 0);
-            }
-        }
+        $instruction = $this->coordinator->findUnconstrainedBaseCountInstruction();
 
-        return null;
+        return $instruction instanceof AggregateInstruction ? (int) ($aggregates[$instruction->alias] ?? 0) : null;
     }
 }
