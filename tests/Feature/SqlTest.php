@@ -179,6 +179,31 @@ it('without withCount three queries fire: aggregate + COUNT total + data page', 
     expect($queries)->toHaveCount(3);
 });
 
+it('withCount on a relation does not save the COUNT total query — three queries fire', function (): void {
+    // Only base withCount() (no args) may substitute the paginator total.
+    // A relation withCount('sqlComments') must not be used as the total.
+    $queries = captureQueries(
+        fn () => SqlPost::query()->lazyPaginate(5)->withCount('sqlComments')->toArray()
+    );
+
+    expect($queries)->toHaveCount(3);
+});
+
+it('single constrained base aggregate fires a scalar query, not a CROSS JOIN', function (): void {
+    // A single constrained base aggregate still uses the scalar path (resolveSingleInstruction).
+    $queries = captureQueries(
+        fn () => SqlPost::query()->lazyPaginate(5)->withCount([
+            'as a_count' => fn (Builder $builder) => $builder->where('id', '>', 0),
+        ])->toArray()
+    );
+
+    // Query 1: scalar COUNT with WHERE applied
+    // Query 2: COUNT(*) for paginator total (constrained count must not replace it)
+    // Query 3: paginated data
+    expect($queries)->toHaveCount(3)
+        ->and($queries[0])->toBe('select count(*) as aggregate from "sql_posts" where "id" > 0');
+});
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 class SqlPost extends Model
