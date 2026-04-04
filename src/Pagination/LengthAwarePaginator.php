@@ -80,6 +80,9 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
     /**
      * Mirrors AggregatesPaginator::aggregate() but strips the injected total alias
      * from the public aggregates property so it is never surfaced to callers.
+     *
+     * Cannot call parent::aggregate() because aggregate() comes from the AggregatesPaginator
+     * trait, not from BaseLengthAwarePaginator — PHP trait overrides have no parent:: target.
      */
     public function aggregate(): static
     {

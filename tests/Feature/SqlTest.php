@@ -10,6 +10,10 @@ use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
+// Note: Post and Comment model classes are defined in AggregatesPaginatorTest.php.
+// Pest loads test files alphabetically, so AggregatesPaginatorTest loads before SqlTest,
+// making those classes available here without redefinition.
+
 beforeEach(function (): void {
     Schema::create('posts', function (Blueprint $blueprint): void {
         $blueprint->id();
