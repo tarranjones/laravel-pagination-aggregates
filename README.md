@@ -37,7 +37,7 @@ use App\Models\Post;
 use Illuminate\Database\Eloquent\Builder;
 
 $posts = Post::query()
-    ->lazyPaginate(20)
+    ->paginateWithAggregates(20)
     ->withCount([
         'comments as approved_comments' => fn (Builder $q) => $q->where('status', 'approved'),
         'comments as pending_comments'  => fn (Builder $q) => $q->where('status', 'pending'),
@@ -65,7 +65,7 @@ use App\Models\Order;
 use Illuminate\Database\Eloquent\Builder;
 
 $orders = Order::query()
-    ->lazyPaginate(25)
+    ->paginateWithAggregates(25)
     ->withCount([
         'as pending'    => fn (Builder $q) => $q->where('status', 'pending'),
         'as processing' => fn (Builder $q) => $q->where('status', 'processing'),
@@ -93,9 +93,9 @@ $orders = Order::query()
 This package adds three lazy paginator macros to Eloquent Builder:
 
 ```php
-Order::query()->lazyPaginate($perPage);         // LengthAwarePaginator
-Order::query()->lazySimplePaginate($perPage);   // Paginator (no total count)
-Order::query()->lazyCursorPaginate($perPage);   // CursorPaginator
+Order::query()->paginateWithAggregates($perPage);         // LengthAwarePaginator
+Order::query()->simplePaginateWithAggregates($perPage);   // Paginator (no total count)
+Order::query()->cursorPaginateWithAggregates($perPage);   // CursorPaginator
 ```
 
 Pagination queries are deferred until serialization (`toArray()`, `toJson()`, or `toResponse()`). No database queries run until you need the data.
@@ -106,7 +106,7 @@ Call `aggregate()` to resolve and return the aggregate values without serializin
 
 ```php
 $paginator = Order::query()
-    ->lazyPaginate(25)
+    ->paginateWithAggregates(25)
     ->withCount([
         'as pending'   => fn (Builder $q) => $q->where('status', 'pending'),
         'as delivered' => fn (Builder $q) => $q->where('status', 'delivered'),
@@ -126,7 +126,7 @@ Aggregate over the paginator's own base query — any `where`, scope, or date fi
 
 ```php
 Comment::query()
-    ->lazyPaginate(20)
+    ->paginateWithAggregates(20)
     ->withCount()           // aggregates['count'] — total rows
     ->withMax('votes')      // aggregates['max_votes']
     ->withMin('votes')      // aggregates['min_votes']
@@ -135,7 +135,7 @@ Comment::query()
     ->withExists();         // aggregates['exists'] — true if any rows match
 ```
 
-> **`withCount()` optimization:** When used with `lazyPaginate`, a base `withCount()` is reused as the paginator's `total`, saving the separate `COUNT(*)` query that `LengthAwarePaginator` normally fires. Two queries instead of three.
+> **`withCount()` optimization:** When used with `paginateWithAggregates`, a base `withCount()` is reused as the paginator's `total`, saving the separate `COUNT(*)` query that `LengthAwarePaginator` normally fires. Two queries instead of three.
 
 #### Custom alias
 
@@ -153,7 +153,7 @@ Use the array form `['as alias' => fn]` to apply a constraint to a base aggregat
 
 ```php
 Order::query()
-    ->lazyPaginate(25)
+    ->paginateWithAggregates(25)
     ->withCount([
         'as pending'    => fn (Builder $q) => $q->where('status', 'pending'),
         'as processing' => fn (Builder $q) => $q->where('status', 'processing'),
@@ -187,7 +187,7 @@ Aggregate over related models by passing a relation name alongside a column:
 
 ```php
 Post::query()
-    ->lazyPaginate(15)
+    ->paginateWithAggregates(15)
     ->withCount('comments')              // aggregates['comments_count']
     ->withMax('comments', 'votes')       // aggregates['comments_max_votes']
     ->withMin('comments', 'votes')       // aggregates['comments_min_votes']
@@ -242,7 +242,7 @@ Base query and relation aggregates can be combined freely on the same paginator:
 
 ```php
 Post::query()
-    ->lazyPaginate(15)
+    ->paginateWithAggregates(15)
     ->withCount()                   // total posts (also used as paginator total)
     ->withMax('id as latest_id')    // max post ID in the result set
     ->withSum('comments', 'votes')  // total votes across all comments
@@ -256,7 +256,7 @@ Post::query()
 A single base aggregate with no constraint is resolved with a direct scalar query:
 
 ```php
-Comment::query()->lazyPaginate(20)->withSum('votes');
+Comment::query()->paginateWithAggregates(20)->withSum('votes');
 ```
 
 ```sql
@@ -268,7 +268,7 @@ SELECT SUM(`votes`) FROM `comments`
 When multiple base aggregates share the same constraint (or have none), they are batched into one `CROSS JOIN`:
 
 ```php
-Comment::query()->lazyPaginate(20)->withMax('votes')->withMin('votes')->withSum('votes');
+Comment::query()->paginateWithAggregates(20)->withMax('votes')->withMin('votes')->withSum('votes');
 ```
 
 ```sql
@@ -290,7 +290,7 @@ CROSS JOIN (
 Multiple aggregates for the same relation and constraint set are batched into a single derived table:
 
 ```php
-Post::query()->lazyPaginate(15)->withMax('comments', 'votes')->withMin('comments', 'votes');
+Post::query()->paginateWithAggregates(15)->withMax('comments', 'votes')->withMin('comments', 'votes');
 ```
 
 ```sql

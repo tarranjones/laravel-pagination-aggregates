@@ -60,7 +60,7 @@ function captureQueries(Closure $fn): array
 
 it('single base withCount fires a scalar COUNT and a paginate query', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->lazyPaginate(5)->withCount()->toArray()
+        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount()->toArray()
     );
 
     expect($queries)->toBe([
@@ -71,7 +71,7 @@ it('single base withCount fires a scalar COUNT and a paginate query', function (
 
 it('single base withSum fires a scalar SUM, a COUNT total, and a paginate query', function (): void {
     $queries = captureQueries(
-        fn () => SqlComment::query()->lazyPaginate(5)->withSum('votes')->toArray()
+        fn () => SqlComment::query()->paginateWithAggregates(5)->withSum('votes')->toArray()
     );
 
     expect($queries)->toBe([
@@ -85,7 +85,7 @@ it('single base withSum fires a scalar SUM, a COUNT total, and a paginate query'
 
 it('multiple base aggregates are batched into a single CROSS JOIN derived table', function (): void {
     $queries = captureQueries(
-        fn () => SqlComment::query()->lazyPaginate(5)->withMax('votes')->withMin('votes')->toArray()
+        fn () => SqlComment::query()->paginateWithAggregates(5)->withMax('votes')->withMin('votes')->toArray()
     );
 
     expect($queries[0])->toBe(
@@ -95,7 +95,7 @@ it('multiple base aggregates are batched into a single CROSS JOIN derived table'
 
 it('withCount paired with withExists batches both into one CROSS JOIN derived table', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->lazyPaginate(5)->withCount()->withExists()->toArray()
+        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount()->withExists()->toArray()
     );
 
     // withCount reused as total — no separate COUNT(*) paginator query
@@ -109,7 +109,7 @@ it('withCount paired with withExists batches both into one CROSS JOIN derived ta
 
 it('constrained base aggregates with different constraints produce separate CROSS JOINs', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->lazyPaginate(5)->withCount([
+        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount([
             'as a' => fn (Builder $builder) => $builder->where('id', 1),
             'as b' => fn (Builder $builder) => $builder->where('id', 2),
         ])->toArray()
@@ -122,7 +122,7 @@ it('constrained base aggregates with different constraints produce separate CROS
 
 it('constrained base aggregates sharing the same constraint are batched into one CROSS JOIN', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->lazyPaginate(5)->withCount([
+        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount([
             'as a' => fn (Builder $builder) => $builder->where('id', '>', 0),
         ])->withMax([
             'as b' => fn (Builder $builder) => $builder->where('id', '>', 0),
@@ -138,7 +138,7 @@ it('constrained base aggregates sharing the same constraint are batched into one
 
 it('relation aggregates for the same relation are batched into one LEFT JOIN derived table', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->lazyPaginate(5)->withCount('sqlComments')->withMax('sqlComments', 'votes')->toArray()
+        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount('sqlComments')->withMax('sqlComments', 'votes')->toArray()
     );
 
     expect($queries[0])->toBe(
@@ -148,7 +148,7 @@ it('relation aggregates for the same relation are batched into one LEFT JOIN der
 
 it('constrained relation aggregate applies WHERE inside the LEFT JOIN derived table', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->lazyPaginate(5)
+        fn () => SqlPost::query()->paginateWithAggregates(5)
             ->withCount(['sqlComments as high_votes' => fn (Builder $builder) => $builder->where('votes', '>', 3)])
             ->toArray()
     );
@@ -162,7 +162,7 @@ it('constrained relation aggregate applies WHERE inside the LEFT JOIN derived ta
 
 it('withCount reuses the aggregate as the LengthAwarePaginator total, saving a COUNT query', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->lazyPaginate(5)->withCount()->toArray()
+        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount()->toArray()
     );
 
     // Only 2 queries: scalar COUNT (reused as total) + SELECT data page
@@ -173,7 +173,7 @@ it('withCount reuses the aggregate as the LengthAwarePaginator total, saving a C
 
 it('without withCount three queries fire: aggregate + COUNT total + data page', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->lazyPaginate(5)->withMax('id')->toArray()
+        fn () => SqlPost::query()->paginateWithAggregates(5)->withMax('id')->toArray()
     );
 
     expect($queries)->toHaveCount(3);
