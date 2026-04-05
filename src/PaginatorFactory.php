@@ -18,8 +18,9 @@ class PaginatorFactory
         array $columns = ['*'],
         string $pageName = 'page',
         ?int $page = null,
+        ?int $total = null,
     ): LengthAwarePaginator {
-        return new LengthAwarePaginator($builder, $perPage, $columns, $pageName, $page);
+        return new LengthAwarePaginator($builder, $perPage, $columns, $pageName, $page, $total);
     }
 
     public static function simplePaginate(

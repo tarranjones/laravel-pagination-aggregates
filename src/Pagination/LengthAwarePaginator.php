@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace TarranJones\LaravelPaginationAggregates\Pagination;
 
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Pagination\LengthAwarePaginator as BaseLengthAwarePaginator;
 use Illuminate\Pagination\Paginator as PagePaginator;
 use TarranJones\LaravelPaginationAggregates\AggregateCoordinator;
@@ -30,6 +32,7 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
         private array $pendingColumns = ['*'],
         private string $pendingPageName = 'page',
         private ?int $pendingPage = null,
+        private ?int $pendingTotal = null,
     ) {
         $this->coordinator = new AggregateCoordinator(clone $builder);
 
@@ -53,23 +56,55 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
 
         $this->initialized = true;
 
-        // When unconstrained base aggregates exist but no base COUNT is present,
-        // inject a hidden COUNT(*) so the total is computed in the same CROSS JOIN
-        // derived table — avoiding a separate COUNT(*) query.
-        if ($this->coordinator->hasUnconstrainedBaseAggregates()
-            && ! $this->coordinator->hasUnconstrainedBaseCount()) {
-            $this->coordinator->withPaginatorTotal(self::INJECTED_TOTAL_ALIAS);
+        if ($this->pendingTotal !== null) {
+            // Total is pre-known — skip COUNT injection entirely.
+            $columns = $this->pendingColumns;
+
+            // When all rows fit on one page, unconstrained base aggregates will be computed
+            // from the loaded Collection. If columns are not ['*'], ensure any aggregate
+            // columns are included in the SELECT so the data is available.
+            if ($this->pendingTotal <= $this->perPage && $columns !== ['*']) {
+                $extraColumns = [];
+
+                foreach ($this->coordinator->instructions() as $aggregateInstruction) {
+                    if ($this->isCollectionComputable($aggregateInstruction)
+                        && $aggregateInstruction->column !== null
+                        && $aggregateInstruction->column !== '*') {
+                        $extraColumns[] = (string) $aggregateInstruction->column;
+                    }
+                }
+
+                if ($extraColumns !== []) {
+                    $columns = array_values(array_unique(array_merge($columns, $extraColumns)));
+                }
+            }
+
+            $lengthAwarePaginator = (clone $this->coordinator->builder())->paginate(
+                $this->pendingPerPage,
+                $columns,
+                $this->pendingPageName,
+                $this->pendingPage,
+                $this->pendingTotal,
+            );
+        } else {
+            // When unconstrained base aggregates exist but no base COUNT is present,
+            // inject a hidden COUNT(*) so the total is computed in the same CROSS JOIN
+            // derived table — avoiding a separate COUNT(*) query.
+            if ($this->coordinator->hasUnconstrainedBaseAggregates()
+                && ! $this->coordinator->hasUnconstrainedBaseCount()) {
+                $this->coordinator->withPaginatorTotal(self::INJECTED_TOTAL_ALIAS);
+            }
+
+            $aggregates = $this->coordinator->resolve();
+
+            $lengthAwarePaginator = (clone $this->coordinator->builder())->paginate(
+                $this->pendingPerPage,
+                $this->pendingColumns,
+                $this->pendingPageName,
+                $this->pendingPage,
+                $this->extractTotalFromAggregates($aggregates),
+            );
         }
-
-        $aggregates = $this->coordinator->resolve();
-
-        $lengthAwarePaginator = (clone $this->coordinator->builder())->paginate(
-            $this->pendingPerPage,
-            $this->pendingColumns,
-            $this->pendingPageName,
-            $this->pendingPage,
-            $this->extractTotalFromAggregates($aggregates),
-        );
 
         $this->items = $lengthAwarePaginator->getCollection();
         $this->total = $lengthAwarePaginator->total();
@@ -93,6 +128,35 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
 
         $this->initializePaginator();
 
+        // When a pre-known total is provided and all rows fit on one page, compute as many
+        // aggregates as possible from the loaded Collection to avoid DB round-trips.
+        // If ALL instructions are collection-computable, the coordinator is skipped entirely.
+        // If SOME need DB (relation, constrained, or Expression column), the coordinator runs
+        // for all and collection values override the results for computable instructions.
+        if ($this->pendingTotal !== null && $this->total <= $this->perPage) {
+            $collectionResults = [];
+            $needsDb = false;
+
+            foreach ($this->coordinator->instructions() as $aggregateInstruction) {
+                if ($this->isCollectionComputable($aggregateInstruction)) {
+                    $collectionResults[$aggregateInstruction->alias] = $this->computeFromCollection($aggregateInstruction);
+                } else {
+                    $needsDb = true;
+                }
+            }
+
+            if ($needsDb) {
+                $dbResults = $this->coordinator->resolve();
+                unset($dbResults[self::INJECTED_TOTAL_ALIAS]);
+                // Collection results take priority for instructions computable from items.
+                $this->aggregates = array_merge($dbResults, $collectionResults);
+            } else {
+                $this->aggregates = $collectionResults;
+            }
+
+            return $this;
+        }
+
         $resolved = $this->coordinator->resolve();
         unset($resolved[self::INJECTED_TOTAL_ALIAS]);
         $this->aggregates = $resolved;
@@ -114,5 +178,33 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
         $instruction = $this->coordinator->findUnconstrainedBaseCountInstruction();
 
         return $instruction instanceof AggregateInstruction ? (int) ($aggregates[$instruction->alias] ?? 0) : null;
+    }
+
+    /**
+     * Returns true when an aggregate can be computed from $this->items instead of a DB query.
+     * Requires: base query (no relations), no constraint closure, and a plain string column
+     * (Expression columns cannot be used as Collection method keys).
+     */
+    private function isCollectionComputable(AggregateInstruction $aggregateInstruction): bool
+    {
+        return $aggregateInstruction->relations === null
+            && ! $aggregateInstruction->constraint instanceof Closure
+            && ! ($aggregateInstruction->column instanceof Expression);
+    }
+
+    /**
+     * Compute an aggregate from the loaded items Collection.
+     * Only call this when isCollectionComputable() returns true and all rows are on this page.
+     */
+    private function computeFromCollection(AggregateInstruction $aggregateInstruction): mixed
+    {
+        return match ($aggregateInstruction->function) {
+            'count' => $this->total,
+            'sum' => $this->items->sum($aggregateInstruction->column),
+            'avg' => $this->items->avg($aggregateInstruction->column),
+            'max' => $this->items->max($aggregateInstruction->column),
+            'min' => $this->items->min($aggregateInstruction->column),
+            'exists' => $this->items->isNotEmpty(),
+        };
     }
 }
