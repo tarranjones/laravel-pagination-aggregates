@@ -198,7 +198,11 @@ class JoinQueryBuilder
 
     private function wrapColumn(Expression|string|null $column, Grammar $grammar): string
     {
-        $raw = (string) ($column ?? '*');
+        if ($column instanceof Expression) {
+            return (string) $column->getValue($grammar);
+        }
+
+        $raw = $column ?? '*';
 
         return $raw === '*' ? '*' : $grammar->wrap($raw);
     }
