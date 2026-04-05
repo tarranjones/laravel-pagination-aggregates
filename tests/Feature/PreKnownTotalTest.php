@@ -72,7 +72,7 @@ it('pre-known total that does not fit on one page skips COUNT injection but stil
     // The paginate SELECT fires first (index 0); the CROSS JOIN aggregate is index 1.
     $aggregateSql = $queries[1]['query'];
     expect($aggregateSql)->not->toContain('__paginator_total');
-    expect(strtolower($aggregateSql))->toContain('sum');
+    expect(strtolower((string) $aggregateSql))->toContain('sum');
 });
 
 it('pre-known total that fits on one page fires only one query for purely collection-computable aggregates', function (): void {
