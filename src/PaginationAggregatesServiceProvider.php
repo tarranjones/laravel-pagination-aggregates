@@ -15,7 +15,7 @@ class PaginationAggregatesServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        Builder::macro('paginateWithAggregates', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): LengthAwarePaginator => PaginatorFactory::paginate($this, $perPage, $columns, $pageName, $page));
+        Builder::macro('paginateWithAggregates', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null, ?int $total = null): LengthAwarePaginator => PaginatorFactory::paginate($this, $perPage, $columns, $pageName, $page, $total));
 
         Builder::macro('simplePaginateWithAggregates', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): Paginator => PaginatorFactory::simplePaginate($this, $perPage, $columns, $pageName, $page));
 

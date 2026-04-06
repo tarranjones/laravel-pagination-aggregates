@@ -293,6 +293,27 @@ it('withAvg on BelongsToMany returns correct global weighted average', function 
     expect($agg['tags_avg_value'])->toEqualWithDelta(4.0, 0.001);
 });
 
+it('withAvg on BelongsToMany with a closure constraint averages only matching pivot rows', function (): void {
+    // Tags: value 4, 6, 2. Constraint: value > 3 → only 4 and 6 qualify → avg = 5.0
+    $tagA = Tag::query()->create(['value' => 4]);
+    $tagB = Tag::query()->create(['value' => 6]);
+    $tagC = Tag::query()->create(['value' => 2]);
+
+    $postOne = Post::query()->where('title', 'First')->first();
+    $postTwo = Post::query()->where('title', 'Second')->first();
+
+    $postOne->tags()->attach([$tagA->id, $tagB->id]);
+    $postTwo->tags()->attach([$tagC->id]);
+
+    $agg = Post::query()
+        ->lazyPaginate(10)
+        ->withAvg(['tags as high_tag_avg' => fn (Builder $builder): Builder => $builder->where('value', '>', 3)], 'value')
+        ->toArray()['aggregates'];
+
+    expect($agg)->toHaveKey('high_tag_avg')
+        ->and($agg['high_tag_avg'])->toEqualWithDelta(5.0, 0.001);
+});
+
 class Post extends Model
 {
     protected $table = 'posts';
@@ -629,4 +650,59 @@ it('base exists resolves correctly when batched with another aggregate', functio
         ->and($aggregates)->toHaveKey('exists')
         ->and($aggregates['exists'])->toBeBool()
         ->and($aggregates['exists'])->toBeTrue();
+});
+
+it('base withAvg batched with another aggregate uses CROSS JOIN path and returns correct value', function (): void {
+    // Two base aggregates forces the CROSS JOIN path (not the single-instruction scalar path).
+    // This exercises resolveBaseResult() with the SUM/COUNT pair for AVG.
+    // Votes: 3, 5, 2 → avg = 10/3
+    $aggregates = Comment::query()
+        ->lazyPaginate(10)
+        ->withAvg('votes')
+        ->withSum('votes')
+        ->toArray()['aggregates'];
+
+    expect($aggregates['avg_votes'])->toEqualWithDelta(10 / 3, 0.001)
+        ->and($aggregates['sum_votes'])->toBe(10);
+});
+
+it('aggregates reflect the global dataset regardless of which page is requested', function (): void {
+    // 2 posts, 1 per page. Aggregate must be identical on both pages.
+    $page1 = Post::query()
+        ->orderBy('id')
+        ->lazyPaginate(1, page: 1)
+        ->withCount('comments')
+        ->withSum('comments', 'votes')
+        ->toArray();
+
+    $page2 = Post::query()
+        ->orderBy('id')
+        ->lazyPaginate(1, page: 2)
+        ->withCount('comments')
+        ->withSum('comments', 'votes')
+        ->toArray();
+
+    // Both pages see all 3 comments and vote-sum of 10
+    expect($page1['aggregates']['comments_count'])->toBe(3)
+        ->and($page2['aggregates']['comments_count'])->toBe(3)
+        ->and($page1['aggregates']['comments_sum_votes'])->toBe(10)
+        ->and($page2['aggregates']['comments_sum_votes'])->toBe(10);
+});
+
+it('withCount on a relation does not replace the paginator total', function (): void {
+    DB::enableQueryLog();
+
+    $payload = Post::query()
+        ->orderBy('id')
+        ->lazyPaginate(1)
+        ->withCount('comments')
+        ->toArray();
+
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    // relation withCount() must NOT be reused as total — COUNT(*) must still fire
+    expect(count($queries))->toBe(3)
+        ->and($payload['total'])->toBe(2)
+        ->and($payload['aggregates']['comments_count'])->toBe(3);
 });

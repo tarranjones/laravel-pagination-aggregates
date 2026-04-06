@@ -3,8 +3,6 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -12,23 +10,27 @@ use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
+// Note: Post and Comment model classes are defined in AggregatesPaginatorTest.php.
+// Pest loads test files alphabetically, so AggregatesPaginatorTest loads before SqlTest,
+// making those classes available here without redefinition.
+
 beforeEach(function (): void {
-    Schema::create('sql_posts', function (Blueprint $blueprint): void {
+    Schema::create('posts', function (Blueprint $blueprint): void {
         $blueprint->id();
         $blueprint->string('title');
     });
 
-    Schema::create('sql_comments', function (Blueprint $blueprint): void {
+    Schema::create('comments', function (Blueprint $blueprint): void {
         $blueprint->id();
-        $blueprint->foreignId('sql_post_id');
+        $blueprint->foreignId('post_id');
         $blueprint->integer('votes');
     });
 
-    $sqlPost = SqlPost::query()->create(['title' => 'A']);
-    $postB = SqlPost::query()->create(['title' => 'B']);
-    SqlComment::query()->create(['sql_post_id' => $sqlPost->id, 'votes' => 3]);
-    SqlComment::query()->create(['sql_post_id' => $sqlPost->id, 'votes' => 5]);
-    SqlComment::query()->create(['sql_post_id' => $postB->id, 'votes' => 2]);
+    $post = Post::query()->create(['title' => 'A']);
+    $postB = Post::query()->create(['title' => 'B']);
+    Comment::query()->create(['post_id' => $post->id, 'votes' => 3]);
+    Comment::query()->create(['post_id' => $post->id, 'votes' => 5]);
+    Comment::query()->create(['post_id' => $postB->id, 'votes' => 2]);
 });
 
 /**
@@ -60,48 +62,50 @@ function captureQueries(Closure $fn): array
 
 it('single base withCount fires a scalar COUNT and a paginate query', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount()->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withCount()->toArray()
     );
 
     expect($queries)->toBe([
-        'select count(*) as aggregate from "sql_posts"',
-        'select * from "sql_posts" limit 5 offset 0',
+        'select count(*) as aggregate from "posts"',
+        'select * from "posts" limit 5 offset 0',
     ]);
 });
 
-it('single base withSum fires a scalar SUM, a COUNT total, and a paginate query', function (): void {
+it('single base withSum is batched with the paginator total into one CROSS JOIN, saving a COUNT query', function (): void {
     $queries = captureQueries(
-        fn () => SqlComment::query()->paginateWithAggregates(5)->withSum('votes')->toArray()
+        fn () => Comment::query()->paginateWithAggregates(5)->withSum('votes')->toArray()
     );
 
-    expect($queries)->toBe([
-        'select sum("votes") as aggregate from "sql_comments"',
-        'select count(*) as aggregate from "sql_comments"',
-        'select * from "sql_comments" limit 5 offset 0',
-    ]);
+    // Only 2 queries: CROSS JOIN (SUM + injected total) + data page — no separate COUNT(*)
+    expect($queries)->toHaveCount(2)
+        ->and($queries[0])->toBe(
+            'select "comments"."id", "agg_comments"."sum_votes", "agg_comments"."__paginator_total" from "comments" cross join (select SUM("votes") AS "sum_votes", COUNT(*) AS "__paginator_total" from "comments") as "agg_comments"'
+        );
 });
 
 // ─── Multiple base aggregates (same constraint) — CROSS JOIN ─────────────────
 
-it('multiple base aggregates are batched into a single CROSS JOIN derived table', function (): void {
+it('multiple base aggregates and the paginator total are batched into a single CROSS JOIN', function (): void {
     $queries = captureQueries(
-        fn () => SqlComment::query()->paginateWithAggregates(5)->withMax('votes')->withMin('votes')->toArray()
+        fn () => Comment::query()->paginateWithAggregates(5)->withMax('votes')->withMin('votes')->toArray()
     );
 
-    expect($queries[0])->toBe(
-        'select "sql_comments"."id", "agg_sql_comments"."max_votes", "agg_sql_comments"."min_votes" from "sql_comments" cross join (select MAX("votes") AS "max_votes", MIN("votes") AS "min_votes" from "sql_comments") as "agg_sql_comments"'
-    );
+    // 2 queries: CROSS JOIN (MAX + MIN + injected total) + data page
+    expect($queries)->toHaveCount(2)
+        ->and($queries[0])->toBe(
+            'select "comments"."id", "agg_comments"."max_votes", "agg_comments"."min_votes", "agg_comments"."__paginator_total" from "comments" cross join (select MAX("votes") AS "max_votes", MIN("votes") AS "min_votes", COUNT(*) AS "__paginator_total" from "comments") as "agg_comments"'
+        );
 });
 
 it('withCount paired with withExists batches both into one CROSS JOIN derived table', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount()->withExists()->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withCount()->withExists()->toArray()
     );
 
     // withCount reused as total — no separate COUNT(*) paginator query
     expect($queries)->toHaveCount(2)
         ->and($queries[0])->toBe(
-            'select "sql_posts"."id", "agg_sql_posts"."count", "agg_sql_posts"."_agg_ecnt_exists" from "sql_posts" cross join (select COUNT(*) AS "count", COUNT(*) AS "_agg_ecnt_exists" from "sql_posts") as "agg_sql_posts"'
+            'select "posts"."id", "agg_posts"."count", "agg_posts"."_agg_ecnt_exists" from "posts" cross join (select COUNT(*) AS "count", COUNT(*) AS "_agg_ecnt_exists" from "posts") as "agg_posts"'
         );
 });
 
@@ -109,20 +113,20 @@ it('withCount paired with withExists batches both into one CROSS JOIN derived ta
 
 it('constrained base aggregates with different constraints produce separate CROSS JOINs', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount([
+        fn () => Post::query()->paginateWithAggregates(5)->withCount([
             'as a' => fn (Builder $builder) => $builder->where('id', 1),
             'as b' => fn (Builder $builder) => $builder->where('id', 2),
         ])->toArray()
     );
 
     expect($queries[0])->toBe(
-        'select "sql_posts"."id", "agg_sql_posts"."a", "agg_sql_posts_2"."b" from "sql_posts" cross join (select COUNT(*) AS "a" from "sql_posts" where "id" = 1) as "agg_sql_posts" cross join (select COUNT(*) AS "b" from "sql_posts" where "id" = 2) as "agg_sql_posts_2"'
+        'select "posts"."id", "agg_posts"."a", "agg_posts_2"."b" from "posts" cross join (select COUNT(*) AS "a" from "posts" where "id" = 1) as "agg_posts" cross join (select COUNT(*) AS "b" from "posts" where "id" = 2) as "agg_posts_2"'
     );
 });
 
 it('constrained base aggregates sharing the same constraint are batched into one CROSS JOIN', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount([
+        fn () => Post::query()->paginateWithAggregates(5)->withCount([
             'as a' => fn (Builder $builder) => $builder->where('id', '>', 0),
         ])->withMax([
             'as b' => fn (Builder $builder) => $builder->where('id', '>', 0),
@@ -130,7 +134,7 @@ it('constrained base aggregates sharing the same constraint are batched into one
     );
 
     expect($queries[0])->toBe(
-        'select "sql_posts"."id", "agg_sql_posts"."a", "agg_sql_posts"."b" from "sql_posts" cross join (select COUNT(*) AS "a", MAX("id") AS "b" from "sql_posts" where "id" > 0) as "agg_sql_posts"'
+        'select "posts"."id", "agg_posts"."a", "agg_posts"."b" from "posts" cross join (select COUNT(*) AS "a", MAX("id") AS "b" from "posts" where "id" > 0) as "agg_posts"'
     );
 });
 
@@ -138,23 +142,23 @@ it('constrained base aggregates sharing the same constraint are batched into one
 
 it('relation aggregates for the same relation are batched into one LEFT JOIN derived table', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount('sqlComments')->withMax('sqlComments', 'votes')->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withCount('comments')->withMax('comments', 'votes')->toArray()
     );
 
     expect($queries[0])->toBe(
-        'select "sql_posts"."id", "agg_sqlComments"."sql_comments_count", "agg_sqlComments"."sql_comments_max_votes" from "sql_posts" left join (select sql_post_id, COUNT(*) AS "sql_comments_count", MAX("votes") AS "sql_comments_max_votes" from "sql_comments" group by "sql_post_id") as "agg_sqlComments" on "agg_sqlComments"."sql_post_id" = "sql_posts"."id"'
+        'select "posts"."id", "agg_comments"."comments_count", "agg_comments"."comments_max_votes" from "posts" left join (select post_id, COUNT(*) AS "comments_count", MAX("votes") AS "comments_max_votes" from "comments" group by "post_id") as "agg_comments" on "agg_comments"."post_id" = "posts"."id"'
     );
 });
 
 it('constrained relation aggregate applies WHERE inside the LEFT JOIN derived table', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->paginateWithAggregates(5)
-            ->withCount(['sqlComments as high_votes' => fn (Builder $builder) => $builder->where('votes', '>', 3)])
+        fn () => Post::query()->paginateWithAggregates(5)
+            ->withCount(['comments as high_votes' => fn (Builder $builder) => $builder->where('votes', '>', 3)])
             ->toArray()
     );
 
     expect($queries[0])->toBe(
-        'select "sql_posts"."id", "agg_sqlComments"."high_votes" from "sql_posts" left join (select sql_post_id, COUNT(*) AS "high_votes" from "sql_comments" where "votes" > 3 group by "sql_post_id") as "agg_sqlComments" on "agg_sqlComments"."sql_post_id" = "sql_posts"."id"'
+        'select "posts"."id", "agg_comments"."high_votes" from "posts" left join (select post_id, COUNT(*) AS "high_votes" from "comments" where "votes" > 3 group by "post_id") as "agg_comments" on "agg_comments"."post_id" = "posts"."id"'
     );
 });
 
@@ -162,44 +166,45 @@ it('constrained relation aggregate applies WHERE inside the LEFT JOIN derived ta
 
 it('withCount reuses the aggregate as the LengthAwarePaginator total, saving a COUNT query', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->paginateWithAggregates(5)->withCount()->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withCount()->toArray()
     );
 
     // Only 2 queries: scalar COUNT (reused as total) + SELECT data page
     expect($queries)->toHaveCount(2)
-        ->and($queries[0])->toBe('select count(*) as aggregate from "sql_posts"')
-        ->and($queries[1])->toBe('select * from "sql_posts" limit 5 offset 0');
+        ->and($queries[0])->toBe('select count(*) as aggregate from "posts"')
+        ->and($queries[1])->toBe('select * from "posts" limit 5 offset 0');
 });
 
-it('without withCount three queries fire: aggregate + COUNT total + data page', function (): void {
+it('unconstrained base aggregate is batched with the paginator total, saving a COUNT query', function (): void {
     $queries = captureQueries(
-        fn () => SqlPost::query()->paginateWithAggregates(5)->withMax('id')->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withMax('id')->toArray()
+    );
+
+    // 2 queries: CROSS JOIN (MAX + injected total) + data page
+    expect($queries)->toHaveCount(2);
+});
+
+it('withCount on a relation does not save the COUNT total query — three queries fire', function (): void {
+    // Only base withCount() (no args) may substitute the paginator total.
+    // A relation withCount('comments') must not be used as the total.
+    $queries = captureQueries(
+        fn () => Post::query()->lazyPaginate(5)->withCount('comments')->toArray()
     );
 
     expect($queries)->toHaveCount(3);
 });
 
-// ─── Models ───────────────────────────────────────────────────────────────────
+it('single constrained base aggregate fires a scalar query, not a CROSS JOIN', function (): void {
+    // A single constrained base aggregate still uses the scalar path (resolveSingleInstruction).
+    $queries = captureQueries(
+        fn () => Post::query()->lazyPaginate(5)->withCount([
+            'as a_count' => fn (Builder $builder) => $builder->where('id', '>', 0),
+        ])->toArray()
+    );
 
-class SqlPost extends Model
-{
-    protected $table = 'sql_posts';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    public function sqlComments(): HasMany
-    {
-        return $this->hasMany(SqlComment::class);
-    }
-}
-
-class SqlComment extends Model
-{
-    protected $table = 'sql_comments';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-}
+    // Query 1: scalar COUNT with WHERE applied
+    // Query 2: COUNT(*) for paginator total (constrained count must not replace it)
+    // Query 3: paginated data
+    expect($queries)->toHaveCount(3)
+        ->and($queries[0])->toBe('select count(*) as aggregate from "posts" where "id" > 0');
+});
