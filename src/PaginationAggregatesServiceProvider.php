@@ -15,10 +15,10 @@ class PaginationAggregatesServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        Builder::macro('lazyPaginate', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null, ?int $total = null): LengthAwarePaginator => PaginatorFactory::paginate($this, $perPage, $columns, $pageName, $page, $total));
+        Builder::macro('paginateWithAggregates', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null, ?int $total = null): LengthAwarePaginator => PaginatorFactory::paginate($this, $perPage, $columns, $pageName, $page, $total));
 
-        Builder::macro('lazySimplePaginate', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): Paginator => PaginatorFactory::simplePaginate($this, $perPage, $columns, $pageName, $page));
+        Builder::macro('simplePaginateWithAggregates', fn (?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): Paginator => PaginatorFactory::simplePaginate($this, $perPage, $columns, $pageName, $page));
 
-        Builder::macro('lazyCursorPaginate', fn (?int $perPage = null, array $columns = ['*'], string $cursorName = 'cursor', Cursor|string|null $cursor = null): CursorPaginator => PaginatorFactory::cursorPaginate($this, $perPage, $columns, $cursorName, $cursor));
+        Builder::macro('cursorPaginateWithAggregates', fn (?int $perPage = null, array $columns = ['*'], string $cursorName = 'cursor', Cursor|string|null $cursor = null): CursorPaginator => PaginatorFactory::cursorPaginate($this, $perPage, $columns, $cursorName, $cursor));
     }
 }

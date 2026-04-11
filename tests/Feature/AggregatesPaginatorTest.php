@@ -47,7 +47,7 @@ beforeEach(function (): void {
 it('adds aggregate meta to length-aware pagination', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withSum('comments', 'votes')
         ->withMax('comments', 'votes');
 
@@ -62,7 +62,7 @@ it('adds aggregate meta to length-aware pagination', function (): void {
 it('adds aggregate meta to simple pagination', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazySimplePaginate(10)
+        ->simplePaginateWithAggregates(10)
         ->withCount('comments');
 
     $payload = $paginator->toArray();
@@ -73,7 +73,7 @@ it('adds aggregate meta to simple pagination', function (): void {
 it('adds aggregate meta to cursor pagination', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyCursorPaginate(10)
+        ->cursorPaginateWithAggregates(10)
         ->withExists('comments');
 
     $payload = $paginator->toArray();
@@ -84,7 +84,7 @@ it('adds aggregate meta to cursor pagination', function (): void {
 it('supports column alias on withMax', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withMax('comments as top_vote', 'votes');
 
     $payload = $paginator->toArray();
@@ -96,7 +96,7 @@ it('supports column alias on withMax', function (): void {
 it('supports closure constraint on withCount', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withCount(['comments' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)]);
 
     $payload = $paginator->toArray();
@@ -107,7 +107,7 @@ it('supports closure constraint on withCount', function (): void {
 it('supports chaining two withMax calls with different aliases', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withMax(['comments as top_recent_vote' => fn (Builder $builder): Builder => $builder->where('votes', '>', 2)], 'votes')
         ->withMax('comments as top_alltime_vote', 'votes');
 
@@ -123,7 +123,7 @@ it('supports chaining two withMax calls with different aliases', function (): vo
 it('supports column alias and closure together on withMax', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withMax(['comments as top_recent_vote' => fn (Builder $builder): Builder => $builder->where('votes', '>', 2)], 'votes');
 
     $payload = $paginator->toArray();
@@ -135,7 +135,7 @@ it('supports column alias and closure together on withMax', function (): void {
 it('withMax accepts an array alias and constraint', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withMax(['comments as peak_vote' => fn (Builder $builder): Builder => $builder->where('votes', '<', 5)], 'votes');
 
     $payload = $paginator->toArray();
@@ -149,7 +149,7 @@ it('defers pagination queries until serialization', function (): void {
 
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withCount('comments');
 
     expect(DB::getQueryLog())->toBe([]);
@@ -170,7 +170,7 @@ it('constrained withCount does not replace the paginator total', function (): vo
 
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withCount(['as first_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')]);
 
     $payload = $paginator->toArray();
@@ -191,7 +191,7 @@ it('uses withCount() aggregate as the paginator total, skipping the COUNT(*) que
 
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withCount();
 
     $payload = $paginator->toArray();
@@ -212,7 +212,7 @@ it('withMax and withMin together are combined into single derived table', functi
 
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withMax('comments', 'votes')
         ->withMin('comments', 'votes');
 
@@ -232,7 +232,7 @@ it('withMax and withMin together are combined into single derived table', functi
 it('withMax, withMin, withSum, withAvg return all four numeric aggregates', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withMax('comments', 'votes')
         ->withMin('comments', 'votes')
         ->withSum('comments', 'votes')
@@ -251,7 +251,7 @@ it('withMax on empty table returns null', function (): void {
     Post::query()->delete();
 
     $paginator = Post::query()
-        ->lazyPaginate(15)
+        ->paginateWithAggregates(15)
         ->withMax('comments', 'votes');
 
     $payload = $paginator->toArray();
@@ -285,7 +285,7 @@ it('withAvg on BelongsToMany returns correct global weighted average', function 
 
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withAvg('tags', 'value');
 
     $agg = $paginator->toArray()['aggregates'];
@@ -364,7 +364,7 @@ class Tag extends Model
 it('withCount with no parameters returns total count', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withCount();
 
     $payload = $paginator->toArray();
@@ -375,7 +375,7 @@ it('withCount with no parameters returns total count', function (): void {
 it('withMax with single parameter computes max on base query', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withMax('votes');
 
     $payload = $paginator->toArray();
@@ -386,7 +386,7 @@ it('withMax with single parameter computes max on base query', function (): void
 it('withMin with single parameter computes min on base query', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withMin('votes');
 
     $payload = $paginator->toArray();
@@ -397,7 +397,7 @@ it('withMin with single parameter computes min on base query', function (): void
 it('withSum with single parameter computes sum on base query', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withSum('votes');
 
     $payload = $paginator->toArray();
@@ -408,7 +408,7 @@ it('withSum with single parameter computes sum on base query', function (): void
 it('withAvg with single parameter computes avg on base query', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withAvg('votes');
 
     $payload = $paginator->toArray();
@@ -419,7 +419,7 @@ it('withAvg with single parameter computes avg on base query', function (): void
 it('combines base query and relation aggregates', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount()
         ->withMax('comments', 'votes')
         ->withMax('id');
@@ -434,7 +434,7 @@ it('combines base query and relation aggregates', function (): void {
 it('supports custom alias on base query aggregate using "as" syntax', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withMax('id as max_post_id');
 
     $payload = $paginator->toArray();
@@ -446,7 +446,7 @@ it('supports custom alias on base query aggregate using "as" syntax', function (
 it('supports custom alias on base query withCount using "as" syntax', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withSum('votes as total_votes');
 
     $payload = $paginator->toArray();
@@ -460,7 +460,7 @@ it('supports custom alias on base query withCount using "as" syntax', function (
 it('withCount constraint: only counts rows matching the constraint', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount(['as first_post_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')]);
 
     expect($paginator->toArray()['aggregates']['first_post_count'])->toBe(1);
@@ -472,7 +472,7 @@ it('withSum constraint: only sums rows matching the constraint', function (): vo
     // We paginate Comments and sum votes where votes > 3.
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withSum(['as high_votes' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)], 'votes');
 
     expect($paginator->toArray()['aggregates']['high_votes'])->toBe(5);
@@ -481,7 +481,7 @@ it('withSum constraint: only sums rows matching the constraint', function (): vo
 it('withMax constraint: only considers rows matching the constraint', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withMax(['as low_max' => fn (Builder $builder): Builder => $builder->where('votes', '<', 5)], 'votes');
 
     expect($paginator->toArray()['aggregates']['low_max'])->toBe(3);
@@ -490,7 +490,7 @@ it('withMax constraint: only considers rows matching the constraint', function (
 it('withMin constraint: only considers rows matching the constraint', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withMin(['as high_min' => fn (Builder $builder): Builder => $builder->where('votes', '>', 2)], 'votes');
 
     expect($paginator->toArray()['aggregates']['high_min'])->toBe(3);
@@ -500,7 +500,7 @@ it('withAvg constraint: only averages rows matching the constraint', function ()
     // votes where votes >= 3: 3, 5 → avg = 4.0
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withAvg(['as avg_high' => fn (Builder $builder): Builder => $builder->where('votes', '>=', 3)], 'votes');
 
     expect($paginator->toArray()['aggregates']['avg_high'])->toEqualWithDelta(4.0, 0.001);
@@ -509,7 +509,7 @@ it('withAvg constraint: only averages rows matching the constraint', function ()
 it('withExists constraint: returns true when matching rows exist', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withExists(['as has_high_votes' => fn (Builder $builder): Builder => $builder->where('votes', '>', 4)]);
 
     expect($paginator->toArray()['aggregates']['has_high_votes'])->toBeTrue();
@@ -518,7 +518,7 @@ it('withExists constraint: returns true when matching rows exist', function (): 
 it('withExists constraint: returns false when no rows match', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withExists(['as has_huge_votes' => fn (Builder $builder): Builder => $builder->where('votes', '>', 100)]);
 
     expect($paginator->toArray()['aggregates']['has_huge_votes'])->toBeFalse();
@@ -527,7 +527,7 @@ it('withExists constraint: returns false when no rows match', function (): void 
 it('withCount array form supports multiple base aggregates with constraints', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount([
             'as high_count' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3),
             'as low_count' => fn (Builder $builder): Builder => $builder->where('votes', '<=', 3),
@@ -543,7 +543,7 @@ it('withCount array form supports multiple base aggregates with constraints', fu
 it('multiple direct aggregates with different constraints produce correct independent results', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount(['as high_count' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)])
         ->withSum(['as high_sum' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)], 'votes')
         ->withCount(['as low_count' => fn (Builder $builder): Builder => $builder->where('votes', '<=', 3)]);
@@ -559,7 +559,7 @@ it('multiple direct aggregates with different constraints produce correct indepe
 it('direct constrained aggregates and relation aggregates can be combined', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount()                                         // all posts
         ->withCount(['as first_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')])
         ->withCount('comments')                              // relation count
@@ -576,7 +576,7 @@ it('direct constrained aggregates and relation aggregates can be combined', func
 it('withCount accepts variadic relation names', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount('comments', 'tags');
 
     $aggregates = $paginator->toArray()['aggregates'];
@@ -588,7 +588,7 @@ it('withCount accepts variadic relation names', function (): void {
 it('withCount accepts an array of relation names', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount(['comments', 'tags']);
 
     $aggregates = $paginator->toArray()['aggregates'];
@@ -598,7 +598,7 @@ it('withCount accepts an array of relation names', function (): void {
 });
 
 it('aggregate() returns the paginator and hydrates the aggregates property', function (): void {
-    $paginator = Post::query()->lazyPaginate(5)->withCount()->aggregate();
+    $paginator = Post::query()->paginateWithAggregates(5)->withCount()->aggregate();
 
     expect($paginator->aggregates)->toBeArray()
         ->and($paginator->aggregates)->toHaveKey('count')
@@ -608,7 +608,7 @@ it('aggregate() returns the paginator and hydrates the aggregates property', fun
 it('aggregate() result is cached — calling toArray() afterwards does not re-run queries', function (): void {
     DB::enableQueryLog();
 
-    $paginator = Post::query()->lazyPaginate(5)->withCount();
+    $paginator = Post::query()->paginateWithAggregates(5)->withCount();
 
     $paginator->aggregate();
 
@@ -623,16 +623,16 @@ it('aggregate() result is cached — calling toArray() afterwards does not re-ru
         ->and($queryCountAfterToArray)->toBe($queryCountAfterAggregate); // aggregate already resolved — no extra queries
 });
 
-it('aggregate() works on lazySimplePaginate', function (): void {
-    $paginator = Post::query()->lazySimplePaginate(5)->withCount()->aggregate();
+it('aggregate() works on simplePaginateWithAggregates', function (): void {
+    $paginator = Post::query()->simplePaginateWithAggregates(5)->withCount()->aggregate();
 
     expect($paginator->aggregates)->toBeArray()
         ->and($paginator->aggregates)->toHaveKey('count')
         ->and($paginator->aggregates['count'])->toBe(Post::count());
 });
 
-it('aggregate() works on lazyCursorPaginate', function (): void {
-    $paginator = Post::query()->lazyCursorPaginate(5)->withCount()->aggregate();
+it('aggregate() works on cursorPaginateWithAggregates', function (): void {
+    $paginator = Post::query()->cursorPaginateWithAggregates(5)->withCount()->aggregate();
 
     expect($paginator->aggregates)->toBeArray()
         ->and($paginator->aggregates)->toHaveKey('count')
@@ -641,7 +641,7 @@ it('aggregate() works on lazyCursorPaginate', function (): void {
 
 it('base exists resolves correctly when batched with another aggregate', function (): void {
     $aggregates = Post::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount()
         ->withExists()
         ->toArray()['aggregates'];
