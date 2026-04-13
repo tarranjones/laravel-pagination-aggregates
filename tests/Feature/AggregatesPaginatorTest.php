@@ -178,10 +178,9 @@ it('constrained withCount does not replace the paginator total', function (): vo
     $queries = DB::getQueryLog();
     DB::disableQueryLog();
 
-    // Query 1: constrained count aggregate
-    // Query 2: COUNT(*) for paginator total (must still fire — constrained count must not replace it)
-    // Query 3: paginated data
-    expect(count($queries))->toBe(3)
+    // The constrained count does NOT replace the paginator total — __paginator_total is injected
+    // alongside it in a single CROSS JOIN (1 aggregate query + 1 paginated data query = 2 total).
+    expect(count($queries))->toBe(2)
         ->and($payload['total'])->toBe(2)
         ->and($payload['aggregates']['first_count'])->toBe(1);
 });

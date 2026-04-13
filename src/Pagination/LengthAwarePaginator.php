@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace TarranJones\LaravelPaginationAggregates\Pagination;
 
-use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Pagination\LengthAwarePaginator as BaseLengthAwarePaginator;
 use Illuminate\Pagination\Paginator as PagePaginator;
+use Illuminate\Support\Enumerable;
 use TarranJones\LaravelPaginationAggregates\AggregateCoordinator;
 use TarranJones\LaravelPaginationAggregates\AggregateInstruction;
 use TarranJones\LaravelPaginationAggregates\AggregatesPaginator;
@@ -87,10 +87,10 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
                 $this->pendingTotal,
             );
         } else {
-            // When unconstrained base aggregates exist but no base COUNT is present,
-            // inject a hidden COUNT(*) so the total is computed in the same CROSS JOIN
-            // derived table — avoiding a separate COUNT(*) query.
-            if ($this->coordinator->hasUnconstrainedBaseAggregates()
+            // When base DB instructions exist (unconstrained or Closure-constrained) but no
+            // base COUNT is present, inject a hidden COUNT(*) so the total is computed in the
+            // same derived table — avoiding a separate COUNT(*) query from paginate().
+            if ($this->coordinator->hasBaseDbInstructions()
                 && ! $this->coordinator->hasUnconstrainedBaseCount()) {
                 $this->coordinator->withPaginatorTotal(self::INJECTED_TOTAL_ALIAS);
             }
@@ -140,6 +140,8 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
             foreach ($this->coordinator->instructions() as $aggregateInstruction) {
                 if ($this->isCollectionComputable($aggregateInstruction)) {
                     $collectionResults[$aggregateInstruction->alias] = $this->computeFromCollection($aggregateInstruction);
+                } elseif ($aggregateInstruction->constraint instanceof Enumerable) {
+                    $collectionResults[$aggregateInstruction->alias] = $this->computeFromEnumerable($aggregateInstruction);
                 } else {
                     $needsDb = true;
                 }
@@ -188,7 +190,7 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
     private function isCollectionComputable(AggregateInstruction $aggregateInstruction): bool
     {
         return $aggregateInstruction->relations === null
-            && ! $aggregateInstruction->constraint instanceof Closure
+            && $aggregateInstruction->constraint === null
             && ! ($aggregateInstruction->column instanceof Expression);
     }
 
@@ -205,6 +207,26 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
             'max' => $this->items->max($aggregateInstruction->column),
             'min' => $this->items->min($aggregateInstruction->column),
             'exists' => $this->items->isNotEmpty(),
+        };
+    }
+
+    /**
+     * Compute an aggregate directly from the Enumerable provided as the instruction's constraint.
+     * Mirrors AggregateResolver::computeFromEnumerable() for the fits-on-one-page fast path.
+     */
+    private function computeFromEnumerable(AggregateInstruction $aggregateInstruction): mixed
+    {
+        /** @var Enumerable $items */
+        $items = $aggregateInstruction->constraint;
+        $col = $aggregateInstruction->column;
+
+        return match ($aggregateInstruction->function) {
+            'count' => $items->count(),
+            'sum' => $items->sum($col),
+            'avg' => $items->avg($col),
+            'max' => $items->max($col),
+            'min' => $items->min($col),
+            'exists' => $items->isNotEmpty(),
         };
     }
 }

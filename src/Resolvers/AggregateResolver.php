@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasOneOrMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Query\Expression;
+use Illuminate\Database\Query\Grammars\Grammar;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Enumerable;
 use TarranJones\LaravelPaginationAggregates\AggregateInstruction;
 use TarranJones\LaravelPaginationAggregates\AliasResolver;
 
@@ -25,6 +27,75 @@ class AggregateResolver
             return [];
         }
 
+        // Enumerable-constrained base instructions are computed directly from the provided
+        // collection — no DB query needed. Partition them out before the DB resolution path.
+        [$enumerableInstructions, $dbInstructions] = $this->partitionEnumerable($instructions);
+
+        $meta = [];
+
+        foreach ($enumerableInstructions as $enumerableInstruction) {
+            $meta[$enumerableInstruction->alias] = $this->computeFromEnumerable($enumerableInstruction);
+        }
+
+        if ($dbInstructions !== []) {
+            return array_merge($meta, $this->resolveDb($dbInstructions, $builder));
+        }
+
+        return $meta;
+    }
+
+    /**
+     * Partition instructions into Enumerable-constrained (collection path) and all others (DB path).
+     *
+     * @param  AggregateInstruction[]  $instructions
+     * @return array{0: AggregateInstruction[], 1: AggregateInstruction[]}
+     */
+    private function partitionEnumerable(array $instructions): array
+    {
+        $enumerable = [];
+        $db = [];
+
+        foreach ($instructions as $instruction) {
+            if ($instruction->constraint instanceof Enumerable) {
+                $enumerable[] = $instruction;
+            } else {
+                $db[] = $instruction;
+            }
+        }
+
+        return [$enumerable, $db];
+    }
+
+    /**
+     * Compute an aggregate from the Enumerable provided as the instruction's constraint.
+     * The column is used as a plain PHP array key on the in-memory items.
+     */
+    private function computeFromEnumerable(AggregateInstruction $aggregateInstruction): mixed
+    {
+        /** @var Enumerable $items */
+        $items = $aggregateInstruction->constraint;
+        $col = $aggregateInstruction->column instanceof Expression
+            ? (string) $aggregateInstruction->column->getValue(new Grammar)
+            : $aggregateInstruction->column;
+
+        return match ($aggregateInstruction->function) {
+            'count' => $items->count(),
+            'sum' => $items->sum($col),
+            'avg' => $items->avg($col),
+            'max' => $items->max($col),
+            'min' => $items->min($col),
+            'exists' => $items->isNotEmpty(),
+        };
+    }
+
+    /**
+     * Resolve all non-Enumerable instructions via DB queries.
+     *
+     * @param  AggregateInstruction[]  $instructions
+     * @return array<string, mixed>
+     */
+    private function resolveDb(array $instructions, Builder $builder): array
+    {
         // Optimization: if only one instruction and it's a base query aggregate,
         // use scalar query instead of derived table
         if (count($instructions) === 1 && $instructions[0]->relations === null) {

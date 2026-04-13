@@ -7,6 +7,7 @@ namespace TarranJones\LaravelPaginationAggregates;
 use Closure;
 use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Enumerable;
 use InvalidArgumentException;
 use TarranJones\LaravelPaginationAggregates\Resolvers\AggregateResolver;
 
@@ -119,6 +120,17 @@ class AggregateCoordinator
     }
 
     /**
+     * Returns true when at least one instruction targets the base query via DB (not Enumerable).
+     * Includes both unconstrained and Closure-constrained base instructions.
+     * Used by LengthAwarePaginator to decide whether to bundle __paginator_total into the
+     * aggregate query so that paginate() can skip its own COUNT.
+     */
+    public function hasBaseDbInstructions(): bool
+    {
+        return array_any($this->instructions, fn ($instruction): bool => $instruction->relations === null && ! ($instruction->constraint instanceof Enumerable));
+    }
+
+    /**
      * Returns true when an unconstrained base COUNT(*) instruction already exists.
      * When true, LengthAwarePaginator reuses it as the paginator total instead of injecting one.
      */
@@ -174,7 +186,7 @@ class AggregateCoordinator
         Expression|string $column,
         string $function,
         ?string $as,
-        ?Closure $constraint,
+        Closure|Enumerable|null $constraint,
     ): static {
         $alias = $as ?? $this->aliasResolver()->forColumn($column, $function);
 
@@ -209,7 +221,7 @@ class AggregateCoordinator
                     $column,
                     $function,
                     $baseAlias,
-                    $constraints instanceof Closure ? $constraints : null,
+                    $constraints instanceof Closure || $constraints instanceof Enumerable ? $constraints : null,
                 );
 
                 continue;

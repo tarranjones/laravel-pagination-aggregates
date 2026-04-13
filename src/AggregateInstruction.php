@@ -6,6 +6,7 @@ namespace TarranJones\LaravelPaginationAggregates;
 
 use Closure;
 use Illuminate\Contracts\Database\Query\Expression;
+use Illuminate\Support\Enumerable;
 use InvalidArgumentException;
 
 readonly class AggregateInstruction
@@ -17,8 +18,8 @@ readonly class AggregateInstruction
         public Expression|string|null $column,
         /** @var array<string, mixed>|null — keyed by relation name, null for base query aggregates */
         public ?array $relations,
-        /** Constraint closure for direct (base-query) aggregates only. */
-        public ?Closure $constraint = null,
+        /** Constraint for direct (base-query) aggregates: a Closure modifies the query builder; an Enumerable is used as the dataset directly, skipping DB. */
+        public Closure|Enumerable|null $constraint = null,
     ) {
         if (! in_array($function, ['count', 'max', 'min', 'sum', 'avg', 'exists'], true)) {
             throw new InvalidArgumentException(sprintf("Invalid aggregate function '%s'. Must be one of: count, max, min, sum, avg, exists.", $function));

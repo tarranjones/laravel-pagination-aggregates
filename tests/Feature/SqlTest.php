@@ -119,8 +119,9 @@ it('constrained base aggregates with different constraints produce separate CROS
         ])->toArray()
     );
 
+    // __paginator_total is injected alongside the constrained aggregates in a third CROSS JOIN
     expect($queries[0])->toBe(
-        'select "posts"."id", "agg_posts"."a", "agg_posts_2"."b" from "posts" cross join (select COUNT(*) AS "a" from "posts" where "id" = 1) as "agg_posts" cross join (select COUNT(*) AS "b" from "posts" where "id" = 2) as "agg_posts_2"'
+        'select "posts"."id", "agg_posts"."a", "agg_posts_2"."b", "agg_posts_3"."__paginator_total" from "posts" cross join (select COUNT(*) AS "a" from "posts" where "id" = 1) as "agg_posts" cross join (select COUNT(*) AS "b" from "posts" where "id" = 2) as "agg_posts_2" cross join (select COUNT(*) AS "__paginator_total" from "posts") as "agg_posts_3"'
     );
 });
 
@@ -133,8 +134,9 @@ it('constrained base aggregates sharing the same constraint are batched into one
         ], 'id')->toArray()
     );
 
+    // __paginator_total is injected in a separate CROSS JOIN (different constraint = different group)
     expect($queries[0])->toBe(
-        'select "posts"."id", "agg_posts"."a", "agg_posts"."b" from "posts" cross join (select COUNT(*) AS "a", MAX("id") AS "b" from "posts" where "id" > 0) as "agg_posts"'
+        'select "posts"."id", "agg_posts"."a", "agg_posts"."b", "agg_posts_2"."__paginator_total" from "posts" cross join (select COUNT(*) AS "a", MAX("id") AS "b" from "posts" where "id" > 0) as "agg_posts" cross join (select COUNT(*) AS "__paginator_total" from "posts") as "agg_posts_2"'
     );
 });
 
@@ -194,17 +196,18 @@ it('withCount on a relation does not save the COUNT total query — three querie
     expect($queries)->toHaveCount(3);
 });
 
-it('single constrained base aggregate fires a scalar query, not a CROSS JOIN', function (): void {
-    // A single constrained base aggregate still uses the scalar path (resolveSingleInstruction).
+it('single constrained base aggregate is batched with __paginator_total in a CROSS JOIN', function (): void {
+    // __paginator_total is injected alongside the constrained aggregate → 2-instruction CROSS JOIN.
     $queries = captureQueries(
         fn () => Post::query()->lazyPaginate(5)->withCount([
             'as a_count' => fn (Builder $builder) => $builder->where('id', '>', 0),
         ])->toArray()
     );
 
-    // Query 1: scalar COUNT with WHERE applied
-    // Query 2: COUNT(*) for paginator total (constrained count must not replace it)
-    // Query 3: paginated data
-    expect($queries)->toHaveCount(3)
-        ->and($queries[0])->toBe('select count(*) as aggregate from "posts" where "id" > 0');
+    // Query 1: CROSS JOIN with constrained aggregate + injected __paginator_total
+    // Query 2: paginated data
+    expect($queries)->toHaveCount(2)
+        ->and($queries[0])->toBe(
+            'select "posts"."id", "agg_posts"."a_count", "agg_posts_2"."__paginator_total" from "posts" cross join (select COUNT(*) AS "a_count" from "posts" where "id" > 0) as "agg_posts" cross join (select COUNT(*) AS "__paginator_total" from "posts") as "agg_posts_2"'
+        );
 });
