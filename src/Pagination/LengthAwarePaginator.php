@@ -6,6 +6,7 @@ namespace TarranJones\LaravelPaginationAggregates\Pagination;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Expression;
+use Illuminate\Database\Query\Grammars\Grammar;
 use Illuminate\Pagination\LengthAwarePaginator as BaseLengthAwarePaginator;
 use Illuminate\Pagination\Paginator as PagePaginator;
 use Illuminate\Support\Enumerable;
@@ -210,15 +211,13 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
         };
     }
 
-    /**
-     * Compute an aggregate directly from the Enumerable provided as the instruction's constraint.
-     * Mirrors AggregateResolver::computeFromEnumerable() for the fits-on-one-page fast path.
-     */
     private function computeFromEnumerable(AggregateInstruction $aggregateInstruction): mixed
     {
         /** @var Enumerable $items */
         $items = $aggregateInstruction->constraint;
-        $col = $aggregateInstruction->column;
+        $col = $aggregateInstruction->column instanceof Expression
+            ? (string) $aggregateInstruction->column->getValue(new Grammar)
+            : $aggregateInstruction->column;
 
         return match ($aggregateInstruction->function) {
             'count' => $items->count(),

@@ -111,15 +111,6 @@ class AggregateCoordinator
     }
 
     /**
-     * Returns true when at least one instruction targets the base query with no constraint.
-     * Used by LengthAwarePaginator to decide whether to inject a paginator total.
-     */
-    public function hasUnconstrainedBaseAggregates(): bool
-    {
-        return array_any($this->instructions, fn ($instruction): bool => $instruction->relations === null && $instruction->constraint === null);
-    }
-
-    /**
      * Returns true when at least one instruction targets the base query via DB (not Enumerable).
      * Includes both unconstrained and Closure-constrained base instructions.
      * Used by LengthAwarePaginator to decide whether to bundle __paginator_total into the

@@ -27,14 +27,15 @@ class AggregateResolver
             return [];
         }
 
-        // Enumerable-constrained base instructions are computed directly from the provided
-        // collection — no DB query needed. Partition them out before the DB resolution path.
-        [$enumerableInstructions, $dbInstructions] = $this->partitionEnumerable($instructions);
-
         $meta = [];
+        $dbInstructions = [];
 
-        foreach ($enumerableInstructions as $enumerableInstruction) {
-            $meta[$enumerableInstruction->alias] = $this->computeFromEnumerable($enumerableInstruction);
+        foreach ($instructions as $instruction) {
+            if ($instruction->constraint instanceof Enumerable) {
+                $meta[$instruction->alias] = $this->computeFromEnumerable($instruction);
+            } else {
+                $dbInstructions[] = $instruction;
+            }
         }
 
         if ($dbInstructions !== []) {
@@ -42,28 +43,6 @@ class AggregateResolver
         }
 
         return $meta;
-    }
-
-    /**
-     * Partition instructions into Enumerable-constrained (collection path) and all others (DB path).
-     *
-     * @param  AggregateInstruction[]  $instructions
-     * @return array{0: AggregateInstruction[], 1: AggregateInstruction[]}
-     */
-    private function partitionEnumerable(array $instructions): array
-    {
-        $enumerable = [];
-        $db = [];
-
-        foreach ($instructions as $instruction) {
-            if ($instruction->constraint instanceof Enumerable) {
-                $enumerable[] = $instruction;
-            } else {
-                $db[] = $instruction;
-            }
-        }
-
-        return [$enumerable, $db];
     }
 
     /**
