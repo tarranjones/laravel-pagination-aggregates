@@ -22,14 +22,14 @@ class AggregateCoordinator
 
     public function __construct(private readonly Builder $builder) {}
 
-    public function withCount(string|array|null $relations = null, string|array ...$extra): static
+    public function withCount(string|array|null $relations = null): static
     {
         if ($relations === null) {
             return $this->withAggregate(null, '*', 'count');
         }
 
         return $this->withAggregate(
-            is_array($relations) ? $relations : [$relations, ...$extra],
+            is_array($relations) ? $relations : func_get_args(),
             '*',
             'count',
         );
@@ -71,14 +71,14 @@ class AggregateCoordinator
         return $this->withAggregate($relation, $column, 'avg');
     }
 
-    public function withExists(string|array|null $relations = null, string|array ...$extra): static
+    public function withExists(string|array|null $relations = null): static
     {
         if ($relations === null) {
             return $this->withAggregate(null, '*', 'exists');
         }
 
         return $this->withAggregate(
-            is_array($relations) ? $relations : [$relations, ...$extra],
+            is_array($relations) ? $relations : func_get_args(),
             '*',
             'exists',
         );
