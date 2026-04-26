@@ -34,7 +34,7 @@ beforeEach(function (): void {
 
 it('withCount on HasOne returns total number of related rows across all parents', function (): void {
     $aggregates = HoUser::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount('hoProfile')
         ->toArray()['aggregates'];
 
@@ -44,7 +44,7 @@ it('withCount on HasOne returns total number of related rows across all parents'
 
 it('withMax on HasOne returns the max value across all related rows', function (): void {
     $aggregates = HoUser::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withMax('hoProfile', 'score')
         ->toArray()['aggregates'];
 
@@ -53,7 +53,7 @@ it('withMax on HasOne returns the max value across all related rows', function (
 
 it('withMin on HasOne returns the min value across all related rows', function (): void {
     $aggregates = HoUser::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withMin('hoProfile', 'score')
         ->toArray()['aggregates'];
 
@@ -62,7 +62,7 @@ it('withMin on HasOne returns the min value across all related rows', function (
 
 it('withSum on HasOne returns the sum across all related rows', function (): void {
     $aggregates = HoUser::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withSum('hoProfile', 'score')
         ->toArray()['aggregates'];
 
@@ -71,7 +71,7 @@ it('withSum on HasOne returns the sum across all related rows', function (): voi
 
 it('withAvg on HasOne returns the average across all related rows', function (): void {
     $aggregates = HoUser::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withAvg('hoProfile', 'score')
         ->toArray()['aggregates'];
 
@@ -82,7 +82,7 @@ it('withAvg on HasOne returns the average across all related rows', function ():
 
 it('withExists on HasOne returns true when at least one parent has a related row', function (): void {
     $aggregates = HoUser::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withExists('hoProfile')
         ->toArray()['aggregates'];
 
@@ -93,7 +93,7 @@ it('withExists on HasOne returns false when no related rows exist', function ():
     HoProfile::query()->delete();
 
     $aggregates = HoUser::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withExists('hoProfile')
         ->toArray()['aggregates'];
 
@@ -102,7 +102,7 @@ it('withExists on HasOne returns false when no related rows exist', function ():
 
 it('withCount on HasOne with a closure constraint counts only matching rows', function (): void {
     $aggregates = HoUser::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withCount(['hoProfile as high_score_count' => fn (Builder $builder): Builder => $builder->where('score', '>', 60)])
         ->toArray()['aggregates'];
 
@@ -112,7 +112,7 @@ it('withCount on HasOne with a closure constraint counts only matching rows', fu
 
 it('withMax and withMin on HasOne are batched into a single LEFT JOIN', function (): void {
     $aggregates = HoUser::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withMax('hoProfile', 'score')
         ->withMin('hoProfile', 'score')
         ->toArray()['aggregates'];

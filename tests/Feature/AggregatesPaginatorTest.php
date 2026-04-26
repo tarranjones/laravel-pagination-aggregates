@@ -306,7 +306,7 @@ it('withAvg on BelongsToMany with a closure constraint averages only matching pi
     $postTwo->tags()->attach([$tagC->id]);
 
     $agg = Post::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withAvg(['tags as high_tag_avg' => fn (Builder $builder): Builder => $builder->where('value', '>', 3)], 'value')
         ->toArray()['aggregates'];
 
@@ -657,7 +657,7 @@ it('base withAvg batched with another aggregate uses CROSS JOIN path and returns
     // This exercises resolveBaseResult() with the SUM/COUNT pair for AVG.
     // Votes: 3, 5, 2 → avg = 10/3
     $aggregates = Comment::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withAvg('votes')
         ->withSum('votes')
         ->toArray()['aggregates'];
@@ -670,14 +670,14 @@ it('aggregates reflect the global dataset regardless of which page is requested'
     // 2 posts, 1 per page. Aggregate must be identical on both pages.
     $page1 = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1, page: 1)
+        ->paginateWithAggregates(1, page: 1)
         ->withCount('comments')
         ->withSum('comments', 'votes')
         ->toArray();
 
     $page2 = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1, page: 2)
+        ->paginateWithAggregates(1, page: 2)
         ->withCount('comments')
         ->withSum('comments', 'votes')
         ->toArray();
@@ -694,7 +694,7 @@ it('withCount on a relation does not replace the paginator total', function (): 
 
     $payload = Post::query()
         ->orderBy('id')
-        ->lazyPaginate(1)
+        ->paginateWithAggregates(1)
         ->withCount('comments')
         ->toArray();
 
