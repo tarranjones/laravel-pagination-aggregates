@@ -188,7 +188,7 @@ it('withCount on a relation does not save the COUNT total query — three querie
     // Only base withCount() (no args) may substitute the paginator total.
     // A relation withCount('comments') must not be used as the total.
     $queries = captureQueries(
-        fn () => Post::query()->lazyPaginate(5)->withCount('comments')->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withCount('comments')->toArray()
     );
 
     expect($queries)->toHaveCount(3);
@@ -197,7 +197,7 @@ it('withCount on a relation does not save the COUNT total query — three querie
 it('single constrained base aggregate fires a scalar query, not a CROSS JOIN', function (): void {
     // A single constrained base aggregate still uses the scalar path (resolveSingleInstruction).
     $queries = captureQueries(
-        fn () => Post::query()->lazyPaginate(5)->withCount([
+        fn () => Post::query()->paginateWithAggregates(5)->withCount([
             'as a_count' => fn (Builder $builder) => $builder->where('id', '>', 0),
         ])->toArray()
     );

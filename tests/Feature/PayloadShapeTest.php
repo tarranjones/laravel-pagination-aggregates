@@ -37,7 +37,7 @@ beforeEach(function (): void {
 it('lazyPaginate toArray contains all standard LengthAwarePaginator keys plus aggregates', function (): void {
     $payload = ShapePost::query()
         ->orderBy('id')
-        ->lazyPaginate(15)
+        ->paginateWithAggregates(15)
         ->withCount('shapeComments')
         ->withSum('shapeComments', 'votes')
         ->toArray();
@@ -69,7 +69,7 @@ it('lazyPaginate toArray contains all standard LengthAwarePaginator keys plus ag
 it('lazyPaginate toArray does not include aggregates key when no aggregates are configured', function (): void {
     $payload = ShapePost::query()
         ->orderBy('id')
-        ->lazyPaginate(15)
+        ->paginateWithAggregates(15)
         ->toArray();
 
     expect($payload)->not->toHaveKey('aggregates');
@@ -80,7 +80,7 @@ it('lazyPaginate toArray does not include aggregates key when no aggregates are 
 it('lazySimplePaginate toArray contains all standard Paginator keys plus aggregates', function (): void {
     $payload = ShapePost::query()
         ->orderBy('id')
-        ->lazySimplePaginate(15)
+        ->simplePaginateWithAggregates(15)
         ->withCount('shapeComments')
         ->toArray();
 
@@ -106,7 +106,7 @@ it('lazySimplePaginate toArray contains all standard Paginator keys plus aggrega
 it('lazyCursorPaginate toArray contains all standard CursorPaginator keys plus aggregates', function (): void {
     $payload = ShapePost::query()
         ->orderBy('id')
-        ->lazyCursorPaginate(15)
+        ->cursorPaginateWithAggregates(15)
         ->withCount('shapeComments')
         ->toArray();
 
@@ -128,7 +128,7 @@ it('lazyCursorPaginate toArray contains all standard CursorPaginator keys plus a
 
 it('two withExists with different constraints produce independent boolean results', function (): void {
     $aggregates = ShapeComment::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withExists(['as has_high' => fn (Builder $builder): Builder => $builder->where('votes', '>', 5)])
         ->withExists(['as has_low' => fn (Builder $builder): Builder => $builder->where('votes', '<', 2)])
         ->toArray()['aggregates'];
@@ -140,7 +140,7 @@ it('two withExists with different constraints produce independent boolean result
 
 it('two unconstrained withExists calls with different aliases both resolve to true', function (): void {
     $aggregates = ShapeComment::query()
-        ->lazyPaginate(10)
+        ->paginateWithAggregates(10)
         ->withExists(['as first_exists'])
         ->withExists(['as second_exists'])
         ->toArray()['aggregates'];

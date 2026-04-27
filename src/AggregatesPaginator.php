@@ -14,9 +14,9 @@ trait AggregatesPaginator
     /** @var array<string, mixed>|null */
     public private(set) ?array $aggregates = null;
 
-    public function withCount(string|array|null $relations = null, string|array ...$extra): static
+    public function withCount(string|array|null $relations = null): static
     {
-        $this->coordinator->withCount($relations, ...$extra);
+        $this->coordinator->withCount(...func_get_args());
 
         return $this;
     }
@@ -57,9 +57,9 @@ trait AggregatesPaginator
         return $this;
     }
 
-    public function withExists(string|array|null $relations = null, string|array ...$extra): static
+    public function withExists(string|array|null $relations = null): static
     {
-        $this->coordinator->withExists($relations, ...$extra);
+        $this->coordinator->withExists(...func_get_args());
 
         return $this;
     }
