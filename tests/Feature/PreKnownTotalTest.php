@@ -93,7 +93,7 @@ it('Expression column aggregate falls back to DB even when fits on one page', fu
     $queries = captureQueriesFor(function (): void {
         Comment::query()
             ->paginateWithAggregates(15, total: 3)
-            ->withMax(DB::raw('"votes"'))
+            ->withMax(DB::raw('votes'))
             ->toArray();
     });
 
@@ -169,7 +169,7 @@ it('restricted columns with fits-on-one-page merges aggregate column into SELECT
 
     // Only 1 query (paginate SELECT), and that query must include the votes column.
     expect($queries)->toHaveCount(1);
-    expect($queries[0]['query'])->toContain('"votes"');
+    expect($queries[0]['query'])->toMatch('/["`]votes["`]/');
 });
 
 it('without pre-known total the original CROSS JOIN behaviour is unchanged', function (): void {

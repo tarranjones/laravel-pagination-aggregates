@@ -94,7 +94,7 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - All non-trivial changes go through a PR — never commit directly to main.
 - Branch naming: `feat/`, `fix/`, `chore/`, `refactor/` prefixes.
 - Before creating a PR: run `vendor/bin/pest --compact`, `vendor/bin/pint --test`, `vendor/bin/rector --dry-run`, and `vendor/bin/phpstan analyse` (or `composer check`). All must pass.
-- Create PRs with `gh pr create`. CI runs PHP 8.4/8.5 × Laravel 12/13 (plus non-blocking PHP 8.6), Pint, Rector, and PHPStan.
+- Create PRs with `gh pr create`. CI runs PHP 8.4/8.5 × Laravel 12/13 (plus non-blocking PHP 8.6) on SQLite, MySQL, MariaDB and PostgreSQL, plus Pint, Rector, and PHPStan. Tests must stay driver-agnostic (no hard-coded identifier quoting).
 - After CI passes and the PR is reviewed, merge with `gh pr merge <number> --merge`, then `git checkout main && git pull`.
 - Do not add `Co-Authored-By: Claude` lines to commit messages.
 

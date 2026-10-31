@@ -32,7 +32,7 @@ beforeEach(function (): void {
 it('withMax accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
     $paginator = ExprPost::query()
         ->paginateWithAggregates(10)
-        ->withMax('exprComments', DB::raw('"votes"'));
+        ->withMax('exprComments', DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -43,7 +43,7 @@ it('withMax accepts a DB::raw() Expression as column on a relation aggregate', f
 it('withMin accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
     $paginator = ExprPost::query()
         ->paginateWithAggregates(10)
-        ->withMin('exprComments', DB::raw('"votes"'));
+        ->withMin('exprComments', DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -54,7 +54,7 @@ it('withMin accepts a DB::raw() Expression as column on a relation aggregate', f
 it('withSum accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
     $paginator = ExprPost::query()
         ->paginateWithAggregates(10)
-        ->withSum('exprComments', DB::raw('"votes"'));
+        ->withSum('exprComments', DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -65,7 +65,7 @@ it('withSum accepts a DB::raw() Expression as column on a relation aggregate', f
 it('withAvg accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
     $paginator = ExprPost::query()
         ->paginateWithAggregates(10)
-        ->withAvg('exprComments', DB::raw('"votes"'));
+        ->withAvg('exprComments', DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -76,7 +76,7 @@ it('withAvg accepts a DB::raw() Expression as column on a relation aggregate', f
 it('withMax accepts a DB::raw() Expression as column on a base aggregate', function (): void {
     $paginator = ExprComment::query()
         ->paginateWithAggregates(10)
-        ->withMax(DB::raw('"votes"'));
+        ->withMax(DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -87,7 +87,7 @@ it('withMax accepts a DB::raw() Expression as column on a base aggregate', funct
 it('withSum accepts a DB::raw() Expression as column on a base aggregate', function (): void {
     $paginator = ExprComment::query()
         ->paginateWithAggregates(10)
-        ->withSum(DB::raw('"votes"'));
+        ->withSum(DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 

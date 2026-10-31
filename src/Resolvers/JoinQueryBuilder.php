@@ -90,7 +90,8 @@ class JoinQueryBuilder
             ($instructionGroup->constraints)($subQuery);
         }
 
-        $subQuery->selectRaw(implode(', ', $subSelects));
+        // ORDER BY is meaningless inside an aggregate and rejected by PostgreSQL.
+        $subQuery->reorder()->selectRaw(implode(', ', $subSelects));
         $query->crossJoinSub($subQuery, $jAlias);
     }
 

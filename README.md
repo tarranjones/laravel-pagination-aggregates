@@ -327,6 +327,8 @@ LIMIT 1
 ## Notes
 
 - Aggregates reflect the full base query, not just the current page.
+- Values have the same PHP types on every database: `count` → `int`, `exists` → `bool`, `sum` → `int|float`, `avg` → `float|null`. `max`/`min` are returned as the database gives them (they may be dates or strings).
+- Tested on SQLite, MySQL 8.4, MariaDB 11.4 and PostgreSQL 17.
 - When the base query returns no rows, relation aggregates return `0` for count/sum and `null` for max/min/avg/exists.
 - Pagination queries are deferred until the paginator is first read.
 - For `groupBy()`, `having()`, `distinct()` or union base queries the paginator `total` is always computed by Laravel's own count query. Base-query aggregates (`withCount()`, `withSum('column')`, …) on grouped queries are evaluated per group and are not supported; relation aggregates are unaffected.

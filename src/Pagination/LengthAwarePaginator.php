@@ -12,6 +12,7 @@ use Illuminate\Pagination\Paginator as PagePaginator;
 use TarranJones\LaravelPaginationAggregates\AggregateCoordinator;
 use TarranJones\LaravelPaginationAggregates\AggregateInstruction;
 use TarranJones\LaravelPaginationAggregates\AggregatesPaginator;
+use TarranJones\LaravelPaginationAggregates\Resolvers\AggregateResolver;
 
 class LengthAwarePaginator extends BaseLengthAwarePaginator
 {
@@ -202,7 +203,7 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
      */
     private function computeFromCollection(AggregateInstruction $aggregateInstruction): mixed
     {
-        return match ($aggregateInstruction->function) {
+        $value = match ($aggregateInstruction->function) {
             'count' => $this->total,
             'sum' => $this->items->sum($aggregateInstruction->column),
             'avg' => $this->items->avg($aggregateInstruction->column),
@@ -210,5 +211,7 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
             'min' => $this->items->min($aggregateInstruction->column),
             'exists' => $this->items->isNotEmpty(),
         };
+
+        return AggregateResolver::normalizeValue($aggregateInstruction->function, $value);
     }
 }

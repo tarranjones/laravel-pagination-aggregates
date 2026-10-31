@@ -44,8 +44,9 @@ function captureQueries(Closure $fn): array
     $log = DB::getQueryLog();
     DB::disableQueryLog();
 
-    // Laravel 13 quotes Laravel's own `aggregate` alias; normalise so snapshots match on 12 and 13.
-    return array_map(fn (array $entry): string => str_replace('as "aggregate"', 'as aggregate', array_reduce(
+    // Snapshots are written in SQLite/PostgreSQL quoting: normalise MySQL backticks, and
+    // Laravel 13's quoted `aggregate` alias, so the same snapshots hold on every driver and version.
+    return array_map(fn (array $entry): string => str_replace(['`', 'as "aggregate"'], ['"', 'as aggregate'], array_reduce(
         $entry['bindings'],
         fn (string $sql, mixed $binding): string => (string) preg_replace(
             '/\?/',

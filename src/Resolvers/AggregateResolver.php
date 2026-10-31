@@ -135,7 +135,7 @@ class AggregateResolver
             'exists' => $query->exists(),
         };
 
-        return [$alias => $value];
+        return [$alias => self::normalizeValue($aggregateInstruction->function, $value)];
     }
 
     /**
@@ -279,14 +279,7 @@ class AggregateResolver
     private function resolveResult(AggregateInstruction $aggregateInstruction, object $row, string|array|null $colInfo): mixed
     {
         if ($colInfo === null) {
-            $value = $row->{$aggregateInstruction->alias} ?? null;
-
-            return match ($aggregateInstruction->function) {
-                'count' => (int) ($value ?? 0),
-                'sum' => $aggregateInstruction->relations === null ? $value : $this->normalizeNumeric($value ?? 0),
-                'exists' => (bool) $value,
-                default => $value,
-            };
+            return self::normalizeValue($aggregateInstruction->function, $row->{$aggregateInstruction->alias} ?? null);
         }
 
         if (is_string($colInfo)) {
@@ -298,14 +291,35 @@ class AggregateResolver
         $sum = $row->{$colInfo['sum']} ?? null;
         $count = (int) ($row->{$colInfo['count']} ?? 0);
 
-        return $count > 0 ? $sum / $count : null;
+        return $count > 0 ? (float) $sum / $count : null;
     }
 
     /**
-     * Drivers such as MySQL return SUM() as a numeric string; keep int/float results consistent.
+     * Give every driver the same result types: drivers such as MySQL and PostgreSQL return
+     * SUM() / AVG() as numeric strings, while SQLite returns native numbers.
+     *
+     * count → int, exists → bool, sum → int|float (0 when empty), avg → float|null.
+     * max / min are returned as-is because they may be dates or strings.
      */
-    private function normalizeNumeric(mixed $value): mixed
+    public static function normalizeValue(string $function, mixed $value): mixed
     {
-        return is_string($value) && is_numeric($value) ? $value + 0 : $value;
+        return match ($function) {
+            'count' => (int) ($value ?? 0),
+            'exists' => (bool) $value,
+            'sum' => self::toNumber($value ?? 0),
+            'avg' => $value === null ? null : (float) $value,
+            default => $value,
+        };
+    }
+
+    private static function toNumber(mixed $value): mixed
+    {
+        if (! is_string($value) || ! is_numeric($value)) {
+            return $value;
+        }
+
+        return str_contains($value, '.') || stripos($value, 'e') !== false
+            ? (float) $value
+            : (int) $value;
     }
 }
