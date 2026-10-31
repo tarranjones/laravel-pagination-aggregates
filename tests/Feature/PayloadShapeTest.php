@@ -3,8 +3,6 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -12,6 +10,8 @@ use TarranJones\LaravelPaginationAggregates\Pagination\CursorPaginator;
 use TarranJones\LaravelPaginationAggregates\Pagination\LengthAwarePaginator;
 use TarranJones\LaravelPaginationAggregates\Pagination\Paginator;
 use TarranJones\LaravelPaginationAggregates\PaginatorFactory;
+use Tests\Fixtures\Models\ShapeComment;
+use Tests\Fixtures\Models\ShapePost;
 
 uses(RefreshDatabase::class);
 
@@ -38,8 +38,8 @@ it('lazyPaginate toArray contains all standard LengthAwarePaginator keys plus ag
     $payload = ShapePost::query()
         ->orderBy('id')
         ->paginateWithAggregates(15)
-        ->withCount('shapeComments')
-        ->withSum('shapeComments', 'votes')
+        ->withAggCount('shapeComments')
+        ->withAggSum('shapeComments', 'votes')
         ->toArray();
 
     expect($payload)->toHaveKeys([
@@ -81,7 +81,7 @@ it('lazySimplePaginate toArray contains all standard Paginator keys plus aggrega
     $payload = ShapePost::query()
         ->orderBy('id')
         ->simplePaginateWithAggregates(15)
-        ->withCount('shapeComments')
+        ->withAggCount('shapeComments')
         ->toArray();
 
     expect($payload)->toHaveKeys([
@@ -107,7 +107,7 @@ it('lazyCursorPaginate toArray contains all standard CursorPaginator keys plus a
     $payload = ShapePost::query()
         ->orderBy('id')
         ->cursorPaginateWithAggregates(15)
-        ->withCount('shapeComments')
+        ->withAggCount('shapeComments')
         ->toArray();
 
     expect($payload)->toHaveKeys([
@@ -124,13 +124,13 @@ it('lazyCursorPaginate toArray contains all standard CursorPaginator keys plus a
     expect($payload['aggregates']['shape_comments_count'])->toBe(2);
 });
 
-// ─── Two withExists with different constraints ────────────────────────────────
+// ─── Two withAggExists with different constraints ────────────────────────────────
 
-it('two withExists with different constraints produce independent boolean results', function (): void {
+it('two withAggExists with different constraints produce independent boolean results', function (): void {
     $aggregates = ShapeComment::query()
         ->paginateWithAggregates(10)
-        ->withExists(['as has_high' => fn (Builder $builder): Builder => $builder->where('votes', '>', 5)])
-        ->withExists(['as has_low' => fn (Builder $builder): Builder => $builder->where('votes', '<', 2)])
+        ->withAggExists(['as has_high' => fn (Builder $builder): Builder => $builder->where('votes', '>', 5)])
+        ->withAggExists(['as has_low' => fn (Builder $builder): Builder => $builder->where('votes', '<', 2)])
         ->toArray()['aggregates'];
 
     // votes: 7, 3 → has_high (>5): true (7 qualifies); has_low (<2): false (none qualify)
@@ -138,11 +138,11 @@ it('two withExists with different constraints produce independent boolean result
         ->and($aggregates['has_low'])->toBeFalse();
 });
 
-it('two unconstrained withExists calls with different aliases both resolve to true', function (): void {
+it('two unconstrained withAggExists calls with different aliases both resolve to true', function (): void {
     $aggregates = ShapeComment::query()
         ->paginateWithAggregates(10)
-        ->withExists(['as first_exists'])
-        ->withExists(['as second_exists'])
+        ->withAggExists(['as first_exists'])
+        ->withAggExists(['as second_exists'])
         ->toArray()['aggregates'];
 
     expect($aggregates['first_exists'])->toBeTrue()
@@ -176,26 +176,3 @@ it('PaginatorFactory::paginate passes perPage through to the paginator', functio
 });
 
 // ─── Models ───────────────────────────────────────────────────────────────────
-
-class ShapePost extends Model
-{
-    protected $table = 'shape_posts';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    public function shapeComments(): HasMany
-    {
-        return $this->hasMany(ShapeComment::class);
-    }
-}
-
-class ShapeComment extends Model
-{
-    protected $table = 'shape_comments';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-}

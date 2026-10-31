@@ -2,12 +2,11 @@
 
 declare(strict_types=1);
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
+use Tests\Fixtures\Models\SdComment;
+use Tests\Fixtures\Models\SdPost;
 
 uses(RefreshDatabase::class);
 
@@ -39,7 +38,7 @@ it('relation aggregate excludes soft-deleted child rows', function (): void {
 
     $paginator = SdPost::query()
         ->paginateWithAggregates(10)
-        ->withSum('sdComments', 'votes');
+        ->withAggSum('sdComments', 'votes');
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -52,7 +51,7 @@ it('relation count aggregate excludes soft-deleted child rows', function (): voi
 
     $paginator = SdPost::query()
         ->paginateWithAggregates(10)
-        ->withCount('sdComments');
+        ->withAggCount('sdComments');
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -64,7 +63,7 @@ it('base count aggregate excludes soft-deleted parent rows', function (): void {
 
     $paginator = SdPost::query()
         ->paginateWithAggregates(10)
-        ->withCount();
+        ->withAggCount();
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -76,7 +75,7 @@ it('soft-deleted parent rows are excluded from pagination results', function ():
 
     $paginator = SdPost::query()
         ->paginateWithAggregates(10)
-        ->withCount();
+        ->withAggCount();
 
     $payload = $paginator->toArray();
 
@@ -85,34 +84,3 @@ it('soft-deleted parent rows are excluded from pagination results', function ():
 });
 
 // ─── Models ───────────────────────────────────────────────────────────────────
-
-class SdPost extends Model
-{
-    use SoftDeletes;
-
-    protected $table = 'sd_posts';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    protected $dates = ['deleted_at'];
-
-    public function sdComments(): HasMany
-    {
-        return $this->hasMany(SdComment::class);
-    }
-}
-
-class SdComment extends Model
-{
-    use SoftDeletes;
-
-    protected $table = 'sd_comments';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    protected $dates = ['deleted_at'];
-}

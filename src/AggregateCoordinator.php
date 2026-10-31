@@ -22,62 +22,62 @@ class AggregateCoordinator
 
     public function __construct(private readonly Builder $builder) {}
 
-    public function withCount(string|array|null $relations = null): static
+    public function withAggCount(string|array|null $relations = null): static
     {
         if ($relations === null) {
-            return $this->withAggregate(null, '*', 'count');
+            return $this->addAggregate(null, '*', 'count');
         }
 
-        return $this->withAggregate(
+        return $this->addAggregate(
             is_array($relations) ? $relations : func_get_args(),
             '*',
             'count',
         );
     }
 
-    public function withMax(
+    public function withAggMax(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'max');
+        return $this->addAggregate($relation, $column, 'max');
     }
 
-    public function withMin(
+    public function withAggMin(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'min');
+        return $this->addAggregate($relation, $column, 'min');
     }
 
-    public function withSum(
+    public function withAggSum(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'sum');
+        return $this->addAggregate($relation, $column, 'sum');
     }
 
-    public function withAvg(
+    public function withAggAvg(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
         [$relation, $column] = $this->normalizeAggregateParams($relation, $column);
 
-        return $this->withAggregate($relation, $column, 'avg');
+        return $this->addAggregate($relation, $column, 'avg');
     }
 
-    public function withExists(string|array|null $relations = null): static
+    public function withAggExists(string|array|null $relations = null): static
     {
         if ($relations === null) {
-            return $this->withAggregate(null, '*', 'exists');
+            return $this->addAggregate(null, '*', 'exists');
         }
 
-        return $this->withAggregate(
+        return $this->addAggregate(
             is_array($relations) ? $relations : func_get_args(),
             '*',
             'exists',
@@ -115,7 +115,21 @@ class AggregateCoordinator
      */
     public function hasUnconstrainedBaseAggregates(): bool
     {
-        return array_any($this->instructions, fn ($instruction): bool => $instruction->relations === null && $instruction->constraint === null);
+        return array_any($this->instructions, fn (AggregateInstruction $instruction): bool => $instruction->relations === null && $instruction->constraint === null);
+    }
+
+    /**
+     * Returns false when the base query is grouped, distinct or a union: a COUNT(*) over
+     * such a query does not equal the number of paginated rows.
+     */
+    public function canDeriveTotalFromAggregates(): bool
+    {
+        $query = $this->builder->getQuery();
+
+        return empty($query->groups)
+            && empty($query->havings)
+            && empty($query->unions)
+            && $query->distinct === false;
     }
 
     /**
@@ -143,7 +157,7 @@ class AggregateCoordinator
      * same unconstrained CROSS JOIN derived table as any other base aggregates.
      * For internal use by LengthAwarePaginator only.
      */
-    public function withPaginatorTotal(string $alias): static
+    public function addPaginatorTotal(string $alias): static
     {
         $this->instructions[] = new AggregateInstruction('count', $alias, '*', null);
         $this->cachedValues = null;
@@ -151,7 +165,7 @@ class AggregateCoordinator
         return $this;
     }
 
-    private function withAggregate(
+    private function addAggregate(
         string|array|null $relations,
         Expression|string $column,
         string $function,

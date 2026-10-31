@@ -2,65 +2,143 @@ name: tests
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental }}
 
     strategy:
       fail-fast: false
       matrix:
-        php: [8.4, 8.5]
+        php: ['8.4', '8.5']
+        laravel: ['12.*', '13.*']
+        stability: [prefer-lowest, prefer-stable]
+        experimental: [false]
+        include:
+          # PHP 8.6 is pre-release: run it, but don't block merges on it.
+          - php: '8.6'
+            laravel: '13.*'
+            stability: prefer-stable
+            experimental: true
 
-    name: PHP ${{ matrix.php }}
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.stability }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
+          extensions: pdo_sqlite
           tools: composer:v2
           coverage: none
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+        run: |
+          composer require "illuminate/database:${{ matrix.laravel }}" "illuminate/pagination:${{ matrix.laravel }}" "illuminate/support:${{ matrix.laravel }}" --no-interaction --no-update
+          composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
 
       - name: Run tests
         run: vendor/bin/pest --compact
 
-  lint:
+  databases:
     runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+    strategy:
+      fail-fast: false
+      matrix:
+        laravel: ['12.*', '13.*']
+        database:
+          - { connection: mysql, image: 'mysql:8.4', port: 3306 }
+          - { connection: mariadb, image: 'mariadb:11.4', port: 3306 }
+          - { connection: pgsql, image: 'postgres:17', port: 5432 }
 
-      - uses: shivammathur/setup-php@v2
+    name: ${{ matrix.database.image }} / Laravel ${{ matrix.laravel }}
+
+    services:
+      database:
+        image: ${{ matrix.database.image }}
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+          MARIADB_ROOT_PASSWORD: password
+          MARIADB_DATABASE: testing
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - ${{ matrix.database.port }}:${{ matrix.database.port }}
+
+    env:
+      DB_CONNECTION: ${{ matrix.database.connection }}
+      DB_HOST: 127.0.0.1
+      DB_PORT: ${{ matrix.database.port }}
+      DB_DATABASE: testing
+      DB_USERNAME: ${{ matrix.database.connection == 'pgsql' && 'postgres' || 'root' }}
+      DB_PASSWORD: password
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql, pdo_pgsql
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "illuminate/database:${{ matrix.laravel }}" "illuminate/pagination:${{ matrix.laravel }}" "illuminate/support:${{ matrix.laravel }}" --no-interaction --no-update
+          composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Wait for database
+        run: |
+          for i in $(seq 1 60); do
+            php -r 'try { new PDO(getenv("DB_CONNECTION") === "pgsql" ? "pgsql:host=127.0.0.1;port=".getenv("DB_PORT").";dbname=testing" : "mysql:host=127.0.0.1;port=".getenv("DB_PORT").";dbname=testing", getenv("DB_USERNAME"), "password"); exit(0); } catch (Throwable) { exit(1); }' && exit 0
+            sleep 2
+          done
+          echo "Database did not become ready" && exit 1
+
+      - name: Run tests
+        run: vendor/bin/pest --compact
+
+  quality:
+    runs-on: ubuntu-latest
+
+    name: Pint / Rector / PHPStan
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
           tools: composer:v2
           coverage: none
 
-      - run: composer install --no-interaction --prefer-dist --optimize-autoloader
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
 
-      - run: vendor/bin/pint --test
+      - name: Pint
+        run: vendor/bin/pint --test
 
-  rector:
-    runs-on: ubuntu-latest
+      - name: Rector
+        run: vendor/bin/rector --dry-run
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          tools: composer:v2
-          coverage: none
-
-      - run: composer install --no-interaction --prefer-dist --optimize-autoloader
-
-      - run: vendor/bin/rector --dry-run
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress

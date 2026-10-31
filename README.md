@@ -12,13 +12,14 @@ Attach aggregate data (count, sum, max, min, avg, exists) to Laravel paginated r
 
 - Add rollups alongside paginated data while keeping the native paginator shape.
 - Works with length-aware, simple, and cursor pagination.
-- Queries are deferred until the paginator is serialized — no wasted queries.
+- Queries are deferred until the paginator is first read — no wasted queries.
+- Aggregation happens in the database: only the current page of models is ever loaded into PHP.
 - Relation aggregates compute correct global values — no average-of-averages bug.
 
 ## Requirements
 
-- PHP ^8.4
-- Laravel ^12.0
+- PHP ^8.4 (tested on 8.4 and 8.5; 8.6 tested as pre-release)
+- Laravel 12 or 13
 
 ## Installation
 
@@ -38,7 +39,7 @@ use Illuminate\Database\Eloquent\Builder;
 
 $posts = Post::query()
     ->paginateWithAggregates(20)
-    ->withCount([
+    ->withAggCount([
         'comments as approved_comments' => fn (Builder $q) => $q->where('status', 'approved'),
         'comments as pending_comments'  => fn (Builder $q) => $q->where('status', 'pending'),
         'comments as rejected_comments' => fn (Builder $q) => $q->where('status', 'rejected'),
@@ -66,7 +67,7 @@ use Illuminate\Database\Eloquent\Builder;
 
 $orders = Order::query()
     ->paginateWithAggregates(25)
-    ->withCount([
+    ->withAggCount([
         'as pending'    => fn (Builder $q) => $q->where('status', 'pending'),
         'as processing' => fn (Builder $q) => $q->where('status', 'processing'),
         'as shipped'    => fn (Builder $q) => $q->where('status', 'shipped'),
@@ -88,6 +89,8 @@ $orders = Order::query()
 
 ## Usage
 
+> The paginator methods are prefixed `withAgg…` (`withAggCount()`, `withAggSum()`, …) because they compute one value across the **whole result set**. Eloquent's own `withCount()` / `withSum()` add a value **per row**, and you can still use those on the query before paginating.
+
 ### Pagination macros
 
 This package adds three lazy paginator macros to Eloquent Builder:
@@ -98,21 +101,21 @@ Order::query()->simplePaginateWithAggregates($perPage);   // Paginator (no total
 Order::query()->cursorPaginateWithAggregates($perPage);   // CursorPaginator
 ```
 
-Pagination queries are deferred until serialization (`toArray()`, `toJson()`, or `toResponse()`). No database queries run until you need the data.
+Pagination queries are deferred until the paginator is first read — iterating it, calling `items()`, `total()`, `count()`, `toArray()`/`toJson()`, or passing it to an API resource. Declare all aggregates before reading the paginator so they can be batched.
 
 ### Resolving aggregates directly
 
-Call `aggregate()` to resolve and return the aggregate values without serializing the full paginator:
+Call `resolveAggregates()` to resolve and return the aggregate values without serializing the full paginator:
 
 ```php
 $paginator = Order::query()
     ->paginateWithAggregates(25)
-    ->withCount([
+    ->withAggCount([
         'as pending'   => fn (Builder $q) => $q->where('status', 'pending'),
         'as delivered' => fn (Builder $q) => $q->where('status', 'delivered'),
     ]);
 
-$paginator->aggregate();
+$paginator->resolveAggregates();
 
 $pending   = $paginator->aggregates['pending'];
 $delivered = $paginator->aggregates['delivered'];
@@ -127,24 +130,24 @@ Aggregate over the paginator's own base query — any `where`, scope, or date fi
 ```php
 Comment::query()
     ->paginateWithAggregates(20)
-    ->withCount()           // aggregates['count'] — total rows
-    ->withMax('votes')      // aggregates['max_votes']
-    ->withMin('votes')      // aggregates['min_votes']
-    ->withSum('votes')      // aggregates['sum_votes']
-    ->withAvg('votes')      // aggregates['avg_votes']
-    ->withExists();         // aggregates['exists'] — true if any rows match
+    ->withAggCount()           // aggregates['count'] — total rows
+    ->withAggMax('votes')      // aggregates['max_votes']
+    ->withAggMin('votes')      // aggregates['min_votes']
+    ->withAggSum('votes')      // aggregates['sum_votes']
+    ->withAggAvg('votes')      // aggregates['avg_votes']
+    ->withAggExists();         // aggregates['exists'] — true if any rows match
 ```
 
-> **`withCount()` optimization:** When used with `paginateWithAggregates`, a base `withCount()` is reused as the paginator's `total`, saving the separate `COUNT(*)` query that `LengthAwarePaginator` normally fires. Two queries instead of three.
+> **`withAggCount()` optimization:** When used with `paginateWithAggregates`, a base `withAggCount()` is reused as the paginator's `total`, saving the separate `COUNT(*)` query that `LengthAwarePaginator` normally fires. Two queries instead of three.
 
 #### Custom alias
 
 Use `'column as alias'` to control the output key:
 
 ```php
-->withSum('total as revenue')     // aggregates['revenue']
-->withMax('id as latest_id')      // aggregates['latest_id']
-->withExists('as has_results')    // aggregates['has_results']
+->withAggSum('total as revenue')     // aggregates['revenue']
+->withAggMax('id as latest_id')      // aggregates['latest_id']
+->withAggExists('as has_results')    // aggregates['has_results']
 ```
 
 #### Constrained base aggregates
@@ -154,7 +157,7 @@ Use the array form `['as alias' => fn]` to apply a constraint to a base aggregat
 ```php
 Order::query()
     ->paginateWithAggregates(25)
-    ->withCount([
+    ->withAggCount([
         'as pending'    => fn (Builder $q) => $q->where('status', 'pending'),
         'as processing' => fn (Builder $q) => $q->where('status', 'processing'),
         'as shipped'    => fn (Builder $q) => $q->where('status', 'shipped'),
@@ -165,8 +168,8 @@ Order::query()
 The same syntax works for all numeric aggregates — pass the column as the second argument:
 
 ```php
-->withSum(['as high_value' => fn (Builder $q) => $q->where('total', '>', 1000)], 'total')
-->withMax(['as todays_max' => fn (Builder $q) => $q->whereDate('created_at', today())], 'total')
+->withAggSum(['as high_value' => fn (Builder $q) => $q->where('total', '>', 1000)], 'total')
+->withAggMax(['as todays_max' => fn (Builder $q) => $q->whereDate('created_at', today())], 'total')
 ```
 
 Each unique constraint becomes its own CROSS JOIN derived table. Aggregates that share the same constraint are batched together into one subquery:
@@ -188,19 +191,19 @@ Aggregate over related models by passing a relation name alongside a column:
 ```php
 Post::query()
     ->paginateWithAggregates(15)
-    ->withCount('comments')              // aggregates['comments_count']
-    ->withMax('comments', 'votes')       // aggregates['comments_max_votes']
-    ->withMin('comments', 'votes')       // aggregates['comments_min_votes']
-    ->withSum('comments', 'votes')       // aggregates['comments_sum_votes']
-    ->withAvg('comments', 'votes')       // aggregates['comments_avg_votes']
-    ->withExists('comments');            // aggregates['comments_exists']
+    ->withAggCount('comments')              // aggregates['comments_count']
+    ->withAggMax('comments', 'votes')       // aggregates['comments_max_votes']
+    ->withAggMin('comments', 'votes')       // aggregates['comments_min_votes']
+    ->withAggSum('comments', 'votes')       // aggregates['comments_sum_votes']
+    ->withAggAvg('comments', 'votes')       // aggregates['comments_avg_votes']
+    ->withAggExists('comments');            // aggregates['comments_exists']
 ```
 
 Multiple relation names can be passed as separate arguments or as an array:
 
 ```php
-->withCount('comments', 'tags')          // variadic — two separate aggregates
-->withCount(['comments', 'tags'])        // equivalent array form
+->withAggCount('comments', 'tags')          // variadic — two separate aggregates
+->withAggCount(['comments', 'tags'])        // equivalent array form
 ```
 
 Results represent the full result set — even when viewing page 3, the aggregates cover all pages.
@@ -210,8 +213,8 @@ Results represent the full result set — even when viewing page 3, the aggregat
 Pass `'relation as alias'` to rename the output key:
 
 ```php
-->withMax('comments as top_vote', 'votes')   // aggregates['top_vote']
-->withCount('comments as total_replies')     // aggregates['total_replies']
+->withAggMax('comments as top_vote', 'votes')   // aggregates['top_vote']
+->withAggCount('comments as total_replies')     // aggregates['total_replies']
 ```
 
 #### Closure constraint
@@ -221,7 +224,7 @@ Pass a closure as the array value to scope the relation aggregate query:
 ```php
 use Illuminate\Database\Eloquent\Builder;
 
-->withCount([
+->withAggCount([
     'comments as approved_comments' => fn (Builder $q) => $q->where('status', 'approved'),
     'comments as pending_comments'  => fn (Builder $q) => $q->where('status', 'pending'),
 ])
@@ -230,7 +233,7 @@ use Illuminate\Database\Eloquent\Builder;
 Combine alias and constraint in a single array key for numeric aggregates:
 
 ```php
-->withSum(
+->withAggSum(
     ['comments as approved_vote_total' => fn (Builder $q) => $q->where('status', 'approved')],
     'votes',
 )
@@ -243,10 +246,10 @@ Base query and relation aggregates can be combined freely on the same paginator:
 ```php
 Post::query()
     ->paginateWithAggregates(15)
-    ->withCount()                   // total posts (also used as paginator total)
-    ->withMax('id as latest_id')    // max post ID in the result set
-    ->withSum('comments', 'votes')  // total votes across all comments
-    ->withCount('comments');        // total comment count
+    ->withAggCount()                   // total posts (also used as paginator total)
+    ->withAggMax('id as latest_id')    // max post ID in the result set
+    ->withAggSum('comments', 'votes')  // total votes across all comments
+    ->withAggCount('comments');        // total comment count
 ```
 
 ## SQL reference
@@ -256,7 +259,7 @@ Post::query()
 A single base aggregate with no constraint is resolved with a direct scalar query:
 
 ```php
-Comment::query()->paginateWithAggregates(20)->withSum('votes');
+Comment::query()->paginateWithAggregates(20)->withAggSum('votes');
 ```
 
 ```sql
@@ -268,7 +271,7 @@ SELECT SUM(`votes`) FROM `comments`
 When multiple base aggregates share the same constraint (or have none), they are batched into one `CROSS JOIN`:
 
 ```php
-Comment::query()->paginateWithAggregates(20)->withMax('votes')->withMin('votes')->withSum('votes');
+Comment::query()->paginateWithAggregates(20)->withAggMax('votes')->withAggMin('votes')->withAggSum('votes');
 ```
 
 ```sql
@@ -290,7 +293,7 @@ CROSS JOIN (
 Multiple aggregates for the same relation and constraint set are batched into a single derived table:
 
 ```php
-Post::query()->paginateWithAggregates(15)->withMax('comments', 'votes')->withMin('comments', 'votes');
+Post::query()->paginateWithAggregates(15)->withAggMax('comments', 'votes')->withAggMin('comments', 'votes');
 ```
 
 ```sql
@@ -307,28 +310,38 @@ LEFT JOIN (
 ) AS `agg_comments` ON `agg_comments`.`post_id` = `posts`.`id`
 ```
 
-### BelongsToMany and other relation types
+### BelongsTo, BelongsToMany and other relation types
 
-Relations that are not `HasOne` / `HasMany` fall back to correlated subqueries via Laravel's `withAggregate`. Averages are always computed as `SUM / COUNT` across the full result set to avoid the average-of-averages problem.
+Relations that are not `HasOne` / `HasMany` fall back to correlated subqueries via Laravel's `withAggregate`. Averages are computed from correlated `SUM` and `COUNT` columns, so the result is a global `SUM / COUNT` across the full result set rather than an average of averages.
+
+### Summarising query
+
+The join query above yields one row per base-query row. It is always wrapped in a derived table and collapsed to a single row in the database, so the result set is never transferred to PHP:
+
+```sql
+SELECT COUNT(*) AS `_agg_row_count`,
+       SUM(`agg_rows`.`comments_count`) AS `comments_count`,
+       MAX(`agg_rows`.`comments_max_votes`) AS `comments_max_votes`
+FROM (/* join query */) AS `agg_rows`
+LIMIT 1
+```
 
 ## Notes
 
 - Aggregates reflect the full base query, not just the current page.
+- Values have the same PHP types on every database: `count` → `int`, `exists` → `bool`, `sum` → `int|float`, `avg` → `float|null`. `max`/`min` are returned as the database gives them (they may be dates or strings).
+- Tested on SQLite, MySQL 8.4, MariaDB 11.4 and PostgreSQL 17.
 - When the base query returns no rows, relation aggregates return `0` for count/sum and `null` for max/min/avg/exists.
-- Pagination queries are deferred until the paginator is serialized (`toArray()`, `toJson()`, or `toResponse()`).
+- Pagination queries are deferred until the paginator is first read.
+- For `groupBy()`, `having()`, `distinct()` or union base queries the paginator `total` is always computed by Laravel's own count query. Base-query aggregates (`withAggCount()`, `withAggSum('column')`, …) on grouped queries are evaluated per group and are not supported; relation aggregates are unaffected.
 
 ## Testing
 
 ```bash
-composer test
-```
-
-```bash
-vendor/bin/pint --test
-```
-
-```bash
-vendor/bin/rector --dry-run
+composer test      # Pest
+composer analyse   # PHPStan (Larastan)
+composer lint      # Pint --test, Rector --dry-run, PHPStan
+composer check     # lint + test
 ```
 
 ## Release

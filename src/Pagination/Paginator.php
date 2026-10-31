@@ -13,8 +13,6 @@ class Paginator extends BasePaginator
 {
     use AggregatesPaginator;
 
-    private bool $initialized = false;
-
     public function __construct(
         Builder $builder,
         private ?int $pendingPerPage = null,
@@ -34,16 +32,12 @@ class Paginator extends BasePaginator
             $resolvedPage,
             ['path' => BasePaginator::resolveCurrentPath(), 'pageName' => $this->pendingPageName],
         );
+
+        $this->deferPaginatorState('items', 'hasMore');
     }
 
     protected function initializePaginator(): void
     {
-        if ($this->initialized) {
-            return;
-        }
-
-        $this->initialized = true;
-
         $paginator = (clone $this->coordinator->builder())->simplePaginate(
             $this->pendingPerPage,
             $this->pendingColumns,
@@ -51,7 +45,10 @@ class Paginator extends BasePaginator
             $this->pendingPage,
         );
 
-        $this->items = $paginator->getCollection();
+        if (! $this->isPaginatorStateSet('items')) {
+            $this->items = $paginator->getCollection();
+        }
+
         $this->hasMore = $paginator->hasMorePages();
     }
 }
