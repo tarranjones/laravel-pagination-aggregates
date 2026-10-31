@@ -9,6 +9,19 @@
 - CI runs the full suite against MySQL 8.4, MariaDB 11.4 and PostgreSQL 17 on Laravel 12 and 13.
 
 ### Changed
+- **Breaking:** paginator aggregate methods are renamed so they can't be mistaken for Eloquent's per-row `withCount()` family:
+
+  | Before | After |
+  |---|---|
+  | `withCount()` | `aggregateCount()` |
+  | `withSum()` | `aggregateSum()` |
+  | `withMax()` | `aggregateMax()` |
+  | `withMin()` | `aggregateMin()` |
+  | `withAvg()` | `aggregateAvg()` |
+  | `withExists()` | `aggregateExists()` |
+  | `aggregate()` | `resolveAggregates()` |
+
+  Arguments, aliases and output keys are unchanged.
 - Depend on `illuminate/database`, `illuminate/pagination` and `illuminate/support` instead of the full `laravel/framework`.
 - Aggregates are now collapsed to a single row inside the database. Previously every row of the base query was hydrated into PHP to compute relation aggregates.
 - Pagination state is initialised on first read, not only on serialization.

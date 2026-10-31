@@ -59,57 +59,57 @@ trait AggregatesPaginator
         $this->deferredProperties = [];
     }
 
-    public function withCount(string|array|null $relations = null): static
+    public function aggregateCount(string|array|null $relations = null): static
     {
-        $this->coordinator->withCount(...func_get_args());
+        $this->coordinator->aggregateCount(...func_get_args());
 
         return $this;
     }
 
-    public function withMax(
+    public function aggregateMax(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
-        $this->coordinator->withMax($relation, $column);
+        $this->coordinator->aggregateMax($relation, $column);
 
         return $this;
     }
 
-    public function withMin(
+    public function aggregateMin(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
-        $this->coordinator->withMin($relation, $column);
+        $this->coordinator->aggregateMin($relation, $column);
 
         return $this;
     }
 
-    public function withSum(
+    public function aggregateSum(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
-        $this->coordinator->withSum($relation, $column);
+        $this->coordinator->aggregateSum($relation, $column);
 
         return $this;
     }
 
-    public function withAvg(
+    public function aggregateAvg(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
-        $this->coordinator->withAvg($relation, $column);
+        $this->coordinator->aggregateAvg($relation, $column);
 
         return $this;
     }
 
-    public function withExists(string|array|null $relations = null): static
+    public function aggregateExists(string|array|null $relations = null): static
     {
-        $this->coordinator->withExists(...func_get_args());
+        $this->coordinator->aggregateExists(...func_get_args());
 
         return $this;
     }
 
-    public function aggregate(): static
+    public function resolveAggregates(): static
     {
         if ($this->aggregates !== null) {
             return $this;
@@ -125,7 +125,7 @@ trait AggregatesPaginator
     #[Override]
     public function toArray(): array
     {
-        $this->aggregate();
+        $this->resolveAggregates();
 
         return $this->appendAggregateData(parent::toArray());
     }

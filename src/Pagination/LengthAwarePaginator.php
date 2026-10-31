@@ -92,7 +92,7 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
             if ($canDeriveTotal
                 && $this->coordinator->hasUnconstrainedBaseAggregates()
                 && ! $this->coordinator->hasUnconstrainedBaseCount()) {
-                $this->coordinator->withPaginatorTotal(self::INJECTED_TOTAL_ALIAS);
+                $this->coordinator->addPaginatorTotal(self::INJECTED_TOTAL_ALIAS);
             }
 
             $total = $canDeriveTotal
@@ -119,13 +119,13 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
     }
 
     /**
-     * Mirrors AggregatesPaginator::aggregate() but strips the injected total alias
+     * Mirrors AggregatesPaginator::resolveAggregates() but strips the injected total alias
      * from the public aggregates property so it is never surfaced to callers.
      *
-     * Cannot call parent::aggregate() because aggregate() comes from the AggregatesPaginator
+     * Cannot call parent::resolveAggregates() because resolveAggregates() comes from the AggregatesPaginator
      * trait, not from BaseLengthAwarePaginator — PHP trait overrides have no parent:: target.
      */
-    public function aggregate(): static
+    public function resolveAggregates(): static
     {
         if ($this->aggregates !== null) {
             return $this;
@@ -179,7 +179,7 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
             return (int) ($aggregates[self::INJECTED_TOTAL_ALIAS] ?? 0);
         }
 
-        // Fall back to a user-defined unconstrained base COUNT (e.g. ->withCount()).
+        // Fall back to a user-defined unconstrained base COUNT (e.g. ->aggregateCount()).
         $instruction = $this->coordinator->findUnconstrainedBaseCountInstruction();
 
         return $instruction instanceof AggregateInstruction ? (int) ($aggregates[$instruction->alias] ?? 0) : null;

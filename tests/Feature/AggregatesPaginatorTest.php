@@ -47,8 +47,8 @@ it('adds aggregate meta to length-aware pagination', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withSum('comments', 'votes')
-        ->withMax('comments', 'votes');
+        ->aggregateSum('comments', 'votes')
+        ->aggregateMax('comments', 'votes');
 
     $payload = $paginator->toArray();
 
@@ -62,7 +62,7 @@ it('adds aggregate meta to simple pagination', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->simplePaginateWithAggregates(10)
-        ->withCount('comments');
+        ->aggregateCount('comments');
 
     $payload = $paginator->toArray();
 
@@ -73,18 +73,18 @@ it('adds aggregate meta to cursor pagination', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->cursorPaginateWithAggregates(10)
-        ->withExists('comments');
+        ->aggregateExists('comments');
 
     $payload = $paginator->toArray();
 
     expect($payload['aggregates']['comments_exists'])->toBeTrue();
 });
 
-it('supports column alias on withMax', function (): void {
+it('supports column alias on aggregateMax', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withMax('comments as top_vote', 'votes');
+        ->aggregateMax('comments as top_vote', 'votes');
 
     $payload = $paginator->toArray();
 
@@ -92,23 +92,23 @@ it('supports column alias on withMax', function (): void {
         ->and($payload['aggregates']['top_vote'])->toEqual(5);
 });
 
-it('supports closure constraint on withCount', function (): void {
+it('supports closure constraint on aggregateCount', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withCount(['comments' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)]);
+        ->aggregateCount(['comments' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)]);
 
     $payload = $paginator->toArray();
 
     expect($payload['aggregates']['comments_count'])->toBe(1);
 });
 
-it('supports chaining two withMax calls with different aliases', function (): void {
+it('supports chaining two aggregateMax calls with different aliases', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withMax(['comments as top_recent_vote' => fn (Builder $builder): Builder => $builder->where('votes', '>', 2)], 'votes')
-        ->withMax('comments as top_alltime_vote', 'votes');
+        ->aggregateMax(['comments as top_recent_vote' => fn (Builder $builder): Builder => $builder->where('votes', '>', 2)], 'votes')
+        ->aggregateMax('comments as top_alltime_vote', 'votes');
 
     $payload = $paginator->toArray();
 
@@ -119,11 +119,11 @@ it('supports chaining two withMax calls with different aliases', function (): vo
         ->and($payload['aggregates']['top_alltime_vote'])->toEqual(5);
 });
 
-it('supports column alias and closure together on withMax', function (): void {
+it('supports column alias and closure together on aggregateMax', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withMax(['comments as top_recent_vote' => fn (Builder $builder): Builder => $builder->where('votes', '>', 2)], 'votes');
+        ->aggregateMax(['comments as top_recent_vote' => fn (Builder $builder): Builder => $builder->where('votes', '>', 2)], 'votes');
 
     $payload = $paginator->toArray();
 
@@ -131,11 +131,11 @@ it('supports column alias and closure together on withMax', function (): void {
         ->and($payload['aggregates']['top_recent_vote'])->toEqual(5);
 });
 
-it('withMax accepts an array alias and constraint', function (): void {
+it('aggregateMax accepts an array alias and constraint', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withMax(['comments as peak_vote' => fn (Builder $builder): Builder => $builder->where('votes', '<', 5)], 'votes');
+        ->aggregateMax(['comments as peak_vote' => fn (Builder $builder): Builder => $builder->where('votes', '<', 5)], 'votes');
 
     $payload = $paginator->toArray();
 
@@ -149,7 +149,7 @@ it('defers pagination queries until serialization', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withCount('comments');
+        ->aggregateCount('comments');
 
     expect(DB::getQueryLog())->toBe([]);
 
@@ -159,18 +159,18 @@ it('defers pagination queries until serialization', function (): void {
     DB::disableQueryLog();
 
     // Query 1: relation aggregate (derived table)
-    // Query 2: COUNT(*) for paginator total (no direct withCount() to reuse)
+    // Query 2: COUNT(*) for paginator total (no direct aggregateCount() to reuse)
     // Query 3: paginated data
     expect(count($queries))->toBe(3);
 });
 
-it('constrained withCount does not replace the paginator total', function (): void {
+it('constrained aggregateCount does not replace the paginator total', function (): void {
     DB::enableQueryLog();
 
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withCount(['as first_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')]);
+        ->aggregateCount(['as first_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')]);
 
     $payload = $paginator->toArray();
 
@@ -185,13 +185,13 @@ it('constrained withCount does not replace the paginator total', function (): vo
         ->and($payload['aggregates']['first_count'])->toBe(1);
 });
 
-it('uses withCount() aggregate as the paginator total, skipping the COUNT(*) query', function (): void {
+it('uses aggregateCount() aggregate as the paginator total, skipping the COUNT(*) query', function (): void {
     DB::enableQueryLog();
 
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withCount();
+        ->aggregateCount();
 
     $payload = $paginator->toArray();
 
@@ -206,14 +206,14 @@ it('uses withCount() aggregate as the paginator total, skipping the COUNT(*) que
         ->and($payload['aggregates']['count'])->toBe(2);
 });
 
-it('withMax and withMin together are combined into single derived table', function (): void {
+it('aggregateMax and aggregateMin together are combined into single derived table', function (): void {
     DB::enableQueryLog();
 
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withMax('comments', 'votes')
-        ->withMin('comments', 'votes');
+        ->aggregateMax('comments', 'votes')
+        ->aggregateMin('comments', 'votes');
 
     $result = $paginator->toArray();
 
@@ -228,14 +228,14 @@ it('withMax and withMin together are combined into single derived table', functi
         ->and($result['aggregates']['comments_min_votes'])->toEqual(2);
 });
 
-it('withMax, withMin, withSum, withAvg return all four numeric aggregates', function (): void {
+it('aggregateMax, aggregateMin, aggregateSum, aggregateAvg return all four numeric aggregates', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withMax('comments', 'votes')
-        ->withMin('comments', 'votes')
-        ->withSum('comments', 'votes')
-        ->withAvg('comments', 'votes');
+        ->aggregateMax('comments', 'votes')
+        ->aggregateMin('comments', 'votes')
+        ->aggregateSum('comments', 'votes')
+        ->aggregateAvg('comments', 'votes');
 
     $agg = $paginator->toArray()['aggregates'];
 
@@ -245,13 +245,13 @@ it('withMax, withMin, withSum, withAvg return all four numeric aggregates', func
         ->and($agg['comments_avg_votes'])->toEqualWithDelta(10 / 3, 0.001);
 });
 
-it('withMax on empty table returns null', function (): void {
+it('aggregateMax on empty table returns null', function (): void {
     Comment::query()->delete();
     Post::query()->delete();
 
     $paginator = Post::query()
         ->paginateWithAggregates(15)
-        ->withMax('comments', 'votes');
+        ->aggregateMax('comments', 'votes');
 
     $payload = $paginator->toArray();
 
@@ -268,7 +268,7 @@ it('AggregateInstruction throws when column is null for numeric functions', func
         ->toThrow(InvalidArgumentException::class);
 })->with(['max', 'min', 'sum', 'avg']);
 
-it('withAvg on BelongsToMany returns correct global weighted average', function (): void {
+it('aggregateAvg on BelongsToMany returns correct global weighted average', function (): void {
     // Post 1 → tags with value 4, 6 (avg per-post = 5)
     // Post 2 → tags with value 2 (avg per-post = 2)
     // Global AVG() across all pivot-linked rows = (4 + 6 + 2) / 3 = 4.0
@@ -285,14 +285,14 @@ it('withAvg on BelongsToMany returns correct global weighted average', function 
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withAvg('tags', 'value');
+        ->aggregateAvg('tags', 'value');
 
     $agg = $paginator->toArray()['aggregates'];
 
     expect($agg['tags_avg_value'])->toEqualWithDelta(4.0, 0.001);
 });
 
-it('withAvg on BelongsToMany with a closure constraint averages only matching pivot rows', function (): void {
+it('aggregateAvg on BelongsToMany with a closure constraint averages only matching pivot rows', function (): void {
     // Tags: value 4, 6, 2. Constraint: value > 3 → only 4 and 6 qualify → avg = 5.0
     $tagA = Tag::query()->create(['value' => 4]);
     $tagB = Tag::query()->create(['value' => 6]);
@@ -306,62 +306,62 @@ it('withAvg on BelongsToMany with a closure constraint averages only matching pi
 
     $agg = Post::query()
         ->paginateWithAggregates(10)
-        ->withAvg(['tags as high_tag_avg' => fn (Builder $builder): Builder => $builder->where('value', '>', 3)], 'value')
+        ->aggregateAvg(['tags as high_tag_avg' => fn (Builder $builder): Builder => $builder->where('value', '>', 3)], 'value')
         ->toArray()['aggregates'];
 
     expect($agg)->toHaveKey('high_tag_avg')
         ->and($agg['high_tag_avg'])->toEqualWithDelta(5.0, 0.001);
 });
 
-it('withCount with no parameters returns total count', function (): void {
+it('aggregateCount with no parameters returns total count', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withCount();
+        ->aggregateCount();
 
     $payload = $paginator->toArray();
 
     expect($payload['aggregates']['count'])->toBe(2);
 });
 
-it('withMax with single parameter computes max on base query', function (): void {
+it('aggregateMax with single parameter computes max on base query', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withMax('votes');
+        ->aggregateMax('votes');
 
     $payload = $paginator->toArray();
 
     expect($payload['aggregates']['max_votes'])->toBe(5);
 });
 
-it('withMin with single parameter computes min on base query', function (): void {
+it('aggregateMin with single parameter computes min on base query', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withMin('votes');
+        ->aggregateMin('votes');
 
     $payload = $paginator->toArray();
 
     expect($payload['aggregates']['min_votes'])->toBe(2);
 });
 
-it('withSum with single parameter computes sum on base query', function (): void {
+it('aggregateSum with single parameter computes sum on base query', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withSum('votes');
+        ->aggregateSum('votes');
 
     $payload = $paginator->toArray();
 
     expect($payload['aggregates']['sum_votes'])->toBe(10);
 });
 
-it('withAvg with single parameter computes avg on base query', function (): void {
+it('aggregateAvg with single parameter computes avg on base query', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withAvg('votes');
+        ->aggregateAvg('votes');
 
     $payload = $paginator->toArray();
 
@@ -372,9 +372,9 @@ it('combines base query and relation aggregates', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withCount()
-        ->withMax('comments', 'votes')
-        ->withMax('id');
+        ->aggregateCount()
+        ->aggregateMax('comments', 'votes')
+        ->aggregateMax('id');
 
     $payload = $paginator->toArray();
 
@@ -387,7 +387,7 @@ it('supports custom alias on base query aggregate using "as" syntax', function (
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withMax('id as max_post_id');
+        ->aggregateMax('id as max_post_id');
 
     $payload = $paginator->toArray();
 
@@ -395,11 +395,11 @@ it('supports custom alias on base query aggregate using "as" syntax', function (
         ->and($payload['aggregates']['max_post_id'])->toBe(2);
 });
 
-it('supports custom alias on base query withCount using "as" syntax', function (): void {
+it('supports custom alias on base query aggregateCount using "as" syntax', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withSum('votes as total_votes');
+        ->aggregateSum('votes as total_votes');
 
     $payload = $paginator->toArray();
 
@@ -409,78 +409,78 @@ it('supports custom alias on base query withCount using "as" syntax', function (
 
 // ─── Direct aggregate constraints & aliases ──────────────────────────────────
 
-it('withCount constraint: only counts rows matching the constraint', function (): void {
+it('aggregateCount constraint: only counts rows matching the constraint', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withCount(['as first_post_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')]);
+        ->aggregateCount(['as first_post_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')]);
 
     expect($paginator->toArray()['aggregates']['first_post_count'])->toBe(1);
 });
 
-it('withSum constraint: only sums rows matching the constraint', function (): void {
+it('aggregateSum constraint: only sums rows matching the constraint', function (): void {
     // Post 1 has comments with votes 3, 5. Post 2 has votes 2.
     // Only post_id = 1's comments → but this is a direct aggregate on Comment, not relation.
     // We paginate Comments and sum votes where votes > 3.
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withSum(['as high_votes' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)], 'votes');
+        ->aggregateSum(['as high_votes' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)], 'votes');
 
     expect($paginator->toArray()['aggregates']['high_votes'])->toBe(5);
 });
 
-it('withMax constraint: only considers rows matching the constraint', function (): void {
+it('aggregateMax constraint: only considers rows matching the constraint', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withMax(['as low_max' => fn (Builder $builder): Builder => $builder->where('votes', '<', 5)], 'votes');
+        ->aggregateMax(['as low_max' => fn (Builder $builder): Builder => $builder->where('votes', '<', 5)], 'votes');
 
     expect($paginator->toArray()['aggregates']['low_max'])->toBe(3);
 });
 
-it('withMin constraint: only considers rows matching the constraint', function (): void {
+it('aggregateMin constraint: only considers rows matching the constraint', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withMin(['as high_min' => fn (Builder $builder): Builder => $builder->where('votes', '>', 2)], 'votes');
+        ->aggregateMin(['as high_min' => fn (Builder $builder): Builder => $builder->where('votes', '>', 2)], 'votes');
 
     expect($paginator->toArray()['aggregates']['high_min'])->toBe(3);
 });
 
-it('withAvg constraint: only averages rows matching the constraint', function (): void {
+it('aggregateAvg constraint: only averages rows matching the constraint', function (): void {
     // votes where votes >= 3: 3, 5 → avg = 4.0
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withAvg(['as avg_high' => fn (Builder $builder): Builder => $builder->where('votes', '>=', 3)], 'votes');
+        ->aggregateAvg(['as avg_high' => fn (Builder $builder): Builder => $builder->where('votes', '>=', 3)], 'votes');
 
     expect($paginator->toArray()['aggregates']['avg_high'])->toEqualWithDelta(4.0, 0.001);
 });
 
-it('withExists constraint: returns true when matching rows exist', function (): void {
+it('aggregateExists constraint: returns true when matching rows exist', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withExists(['as has_high_votes' => fn (Builder $builder): Builder => $builder->where('votes', '>', 4)]);
+        ->aggregateExists(['as has_high_votes' => fn (Builder $builder): Builder => $builder->where('votes', '>', 4)]);
 
     expect($paginator->toArray()['aggregates']['has_high_votes'])->toBeTrue();
 });
 
-it('withExists constraint: returns false when no rows match', function (): void {
+it('aggregateExists constraint: returns false when no rows match', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withExists(['as has_huge_votes' => fn (Builder $builder): Builder => $builder->where('votes', '>', 100)]);
+        ->aggregateExists(['as has_huge_votes' => fn (Builder $builder): Builder => $builder->where('votes', '>', 100)]);
 
     expect($paginator->toArray()['aggregates']['has_huge_votes'])->toBeFalse();
 });
 
-it('withCount array form supports multiple base aggregates with constraints', function (): void {
+it('aggregateCount array form supports multiple base aggregates with constraints', function (): void {
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withCount([
+        ->aggregateCount([
             'as high_count' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3),
             'as low_count' => fn (Builder $builder): Builder => $builder->where('votes', '<=', 3),
         ]);
@@ -496,9 +496,9 @@ it('multiple direct aggregates with different constraints produce correct indepe
     $paginator = Comment::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withCount(['as high_count' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)])
-        ->withSum(['as high_sum' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)], 'votes')
-        ->withCount(['as low_count' => fn (Builder $builder): Builder => $builder->where('votes', '<=', 3)]);
+        ->aggregateCount(['as high_count' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)])
+        ->aggregateSum(['as high_sum' => fn (Builder $builder): Builder => $builder->where('votes', '>', 3)], 'votes')
+        ->aggregateCount(['as low_count' => fn (Builder $builder): Builder => $builder->where('votes', '<=', 3)]);
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -512,10 +512,10 @@ it('direct constrained aggregates and relation aggregates can be combined', func
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withCount()                                         // all posts
-        ->withCount(['as first_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')])
-        ->withCount('comments')                              // relation count
-        ->withSum('comments', 'votes');                      // relation sum
+        ->aggregateCount()                                         // all posts
+        ->aggregateCount(['as first_count' => fn (Builder $builder): Builder => $builder->where('title', 'First')])
+        ->aggregateCount('comments')                              // relation count
+        ->aggregateSum('comments', 'votes');                      // relation sum
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -525,11 +525,11 @@ it('direct constrained aggregates and relation aggregates can be combined', func
         ->and($aggregates['comments_sum_votes'])->toBe(10);
 });
 
-it('withCount accepts variadic relation names', function (): void {
+it('aggregateCount accepts variadic relation names', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withCount('comments', 'tags');
+        ->aggregateCount('comments', 'tags');
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -537,11 +537,11 @@ it('withCount accepts variadic relation names', function (): void {
         ->and($aggregates['tags_count'])->toBe(0);
 });
 
-it('withCount accepts an array of relation names', function (): void {
+it('aggregateCount accepts an array of relation names', function (): void {
     $paginator = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(10)
-        ->withCount(['comments', 'tags']);
+        ->aggregateCount(['comments', 'tags']);
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -549,20 +549,20 @@ it('withCount accepts an array of relation names', function (): void {
         ->and($aggregates['tags_count'])->toBe(0);
 });
 
-it('aggregate() returns the paginator and hydrates the aggregates property', function (): void {
-    $paginator = Post::query()->paginateWithAggregates(5)->withCount()->aggregate();
+it('resolveAggregates() returns the paginator and hydrates the aggregates property', function (): void {
+    $paginator = Post::query()->paginateWithAggregates(5)->aggregateCount()->resolveAggregates();
 
     expect($paginator->aggregates)->toBeArray()
         ->and($paginator->aggregates)->toHaveKey('count')
         ->and($paginator->aggregates['count'])->toBe(Post::count());
 });
 
-it('aggregate() result is cached — calling toArray() afterwards does not re-run queries', function (): void {
+it('resolveAggregates() result is cached — calling toArray() afterwards does not re-run queries', function (): void {
     DB::enableQueryLog();
 
-    $paginator = Post::query()->paginateWithAggregates(5)->withCount();
+    $paginator = Post::query()->paginateWithAggregates(5)->aggregateCount();
 
-    $paginator->aggregate();
+    $paginator->resolveAggregates();
 
     $queryCountAfterAggregate = count(DB::getQueryLog());
 
@@ -575,16 +575,16 @@ it('aggregate() result is cached — calling toArray() afterwards does not re-ru
         ->and($queryCountAfterToArray)->toBe($queryCountAfterAggregate); // aggregate already resolved — no extra queries
 });
 
-it('aggregate() works on simplePaginateWithAggregates', function (): void {
-    $paginator = Post::query()->simplePaginateWithAggregates(5)->withCount()->aggregate();
+it('resolveAggregates() works on simplePaginateWithAggregates', function (): void {
+    $paginator = Post::query()->simplePaginateWithAggregates(5)->aggregateCount()->resolveAggregates();
 
     expect($paginator->aggregates)->toBeArray()
         ->and($paginator->aggregates)->toHaveKey('count')
         ->and($paginator->aggregates['count'])->toBe(Post::count());
 });
 
-it('aggregate() works on cursorPaginateWithAggregates', function (): void {
-    $paginator = Post::query()->cursorPaginateWithAggregates(5)->withCount()->aggregate();
+it('resolveAggregates() works on cursorPaginateWithAggregates', function (): void {
+    $paginator = Post::query()->cursorPaginateWithAggregates(5)->aggregateCount()->resolveAggregates();
 
     expect($paginator->aggregates)->toBeArray()
         ->and($paginator->aggregates)->toHaveKey('count')
@@ -594,8 +594,8 @@ it('aggregate() works on cursorPaginateWithAggregates', function (): void {
 it('base exists resolves correctly when batched with another aggregate', function (): void {
     $aggregates = Post::query()
         ->paginateWithAggregates(10)
-        ->withCount()
-        ->withExists()
+        ->aggregateCount()
+        ->aggregateExists()
         ->toArray()['aggregates'];
 
     expect($aggregates)->toHaveKey('count')
@@ -604,14 +604,14 @@ it('base exists resolves correctly when batched with another aggregate', functio
         ->and($aggregates['exists'])->toBeTrue();
 });
 
-it('base withAvg batched with another aggregate uses CROSS JOIN path and returns correct value', function (): void {
+it('base aggregateAvg batched with another aggregate uses CROSS JOIN path and returns correct value', function (): void {
     // Two base aggregates forces the CROSS JOIN path (not the single-instruction scalar path).
     // This exercises resolveBaseResult() with the SUM/COUNT pair for AVG.
     // Votes: 3, 5, 2 → avg = 10/3
     $aggregates = Comment::query()
         ->paginateWithAggregates(10)
-        ->withAvg('votes')
-        ->withSum('votes')
+        ->aggregateAvg('votes')
+        ->aggregateSum('votes')
         ->toArray()['aggregates'];
 
     expect($aggregates['avg_votes'])->toEqualWithDelta(10 / 3, 0.001)
@@ -623,15 +623,15 @@ it('aggregates reflect the global dataset regardless of which page is requested'
     $page1 = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1, page: 1)
-        ->withCount('comments')
-        ->withSum('comments', 'votes')
+        ->aggregateCount('comments')
+        ->aggregateSum('comments', 'votes')
         ->toArray();
 
     $page2 = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1, page: 2)
-        ->withCount('comments')
-        ->withSum('comments', 'votes')
+        ->aggregateCount('comments')
+        ->aggregateSum('comments', 'votes')
         ->toArray();
 
     // Both pages see all 3 comments and vote-sum of 10
@@ -641,31 +641,31 @@ it('aggregates reflect the global dataset regardless of which page is requested'
         ->and($page2['aggregates']['comments_sum_votes'])->toBe(10);
 });
 
-it('withCount on a relation does not replace the paginator total', function (): void {
+it('aggregateCount on a relation does not replace the paginator total', function (): void {
     DB::enableQueryLog();
 
     $payload = Post::query()
         ->orderBy('id')
         ->paginateWithAggregates(1)
-        ->withCount('comments')
+        ->aggregateCount('comments')
         ->toArray();
 
     $queries = DB::getQueryLog();
     DB::disableQueryLog();
 
-    // relation withCount() must NOT be reused as total — COUNT(*) must still fire
+    // relation aggregateCount() must NOT be reused as total — COUNT(*) must still fire
     expect(count($queries))->toBe(3)
         ->and($payload['total'])->toBe(2)
         ->and($payload['aggregates']['comments_count'])->toBe(3);
 });
 
-it('BelongsToMany withExists is false without pivot rows and true once one exists', function (): void {
-    $before = Post::query()->paginateWithAggregates(10)->withExists('tags')->withCount('comments')->toArray()['aggregates'];
+it('BelongsToMany aggregateExists is false without pivot rows and true once one exists', function (): void {
+    $before = Post::query()->paginateWithAggregates(10)->aggregateExists('tags')->aggregateCount('comments')->toArray()['aggregates'];
 
     $tag = Tag::query()->create(['value' => 7]);
     Post::query()->first()->tags()->attach($tag);
 
-    $after = Post::query()->paginateWithAggregates(10)->withExists('tags')->withCount('comments')->toArray()['aggregates'];
+    $after = Post::query()->paginateWithAggregates(10)->aggregateExists('tags')->aggregateCount('comments')->toArray()['aggregates'];
 
     expect($before['tags_exists'])->toBeFalse()
         ->and($after['tags_exists'])->toBeTrue();

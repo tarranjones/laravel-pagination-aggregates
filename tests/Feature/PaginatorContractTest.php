@@ -34,7 +34,7 @@ beforeEach(function (): void {
 // ─── Deferred state is populated on first read ───────────────────────────────
 
 it('length-aware paginator exposes items and totals before serialization', function (): void {
-    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(5)->withCount('comments');
+    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(5)->aggregateCount('comments');
 
     expect($paginator->count())->toBe(5)
         ->and($paginator->total())->toBe(12)
@@ -45,14 +45,14 @@ it('length-aware paginator exposes items and totals before serialization', funct
 });
 
 it('simple paginator exposes items and hasMorePages before serialization', function (): void {
-    $paginator = Post::query()->orderBy('id')->simplePaginateWithAggregates(5)->withCount('comments');
+    $paginator = Post::query()->orderBy('id')->simplePaginateWithAggregates(5)->aggregateCount('comments');
 
     expect($paginator->count())->toBe(5)
         ->and($paginator->hasMorePages())->toBeTrue();
 });
 
 it('cursor paginator exposes items and next cursor before serialization', function (): void {
-    $paginator = Post::query()->orderBy('id')->cursorPaginateWithAggregates(5)->withCount('comments');
+    $paginator = Post::query()->orderBy('id')->cursorPaginateWithAggregates(5)->aggregateCount('comments');
 
     expect($paginator->count())->toBe(5)
         ->and($paginator->hasMorePages())->toBeTrue()
@@ -60,7 +60,7 @@ it('cursor paginator exposes items and next cursor before serialization', functi
 });
 
 it('through() transforms the paginated items', function (): void {
-    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(2)->withCount('comments');
+    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(2)->aggregateCount('comments');
 
     $paginator->through(fn (Post $post): array => ['title' => $post->title]);
 
@@ -77,7 +77,7 @@ it('setCollection() before initialization is preserved', function (): void {
 });
 
 it('JsonResource::collection receives the page data and aggregates', function (): void {
-    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(5)->withCount('comments');
+    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(5)->aggregateCount('comments');
 
     $response = JsonResource::collection($paginator)->response()->getData(true);
 
@@ -89,7 +89,7 @@ it('JsonResource::collection receives the page data and aggregates', function ()
 it('the pagination query runs only once across multiple reads', function (): void {
     DB::enableQueryLog();
 
-    $paginator = Post::query()->paginateWithAggregates(5)->withCount('comments');
+    $paginator = Post::query()->paginateWithAggregates(5)->aggregateCount('comments');
     $paginator->count();
     $paginator->total();
     $paginator->toArray();
@@ -118,9 +118,9 @@ it('relation aggregates hydrate only the current page of models', function (): v
 
     $aggregates = Post::query()
         ->paginateWithAggregates(5)
-        ->withCount('comments')
-        ->withSum('comments', 'votes')
-        ->withMax('id')
+        ->aggregateCount('comments')
+        ->aggregateSum('comments', 'votes')
+        ->aggregateMax('id')
         ->toArray()['aggregates'];
 
     expect($hydrated)->toBe(5)
@@ -140,7 +140,7 @@ it('grouped base queries keep the correct paginator total', function (): void {
         ->select('post_id')
         ->groupBy('post_id')
         ->paginateWithAggregates(5)
-        ->withMax('votes');
+        ->aggregateMax('votes');
 
     expect($paginator->total())->toBe(12)
         ->and($paginator->count())->toBe(5);
