@@ -22,7 +22,7 @@ class AggregateCoordinator
 
     public function __construct(private readonly Builder $builder) {}
 
-    public function aggregateCount(string|array|null $relations = null): static
+    public function withAggCount(string|array|null $relations = null): static
     {
         if ($relations === null) {
             return $this->addAggregate(null, '*', 'count');
@@ -35,7 +35,7 @@ class AggregateCoordinator
         );
     }
 
-    public function aggregateMax(
+    public function withAggMax(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
@@ -44,7 +44,7 @@ class AggregateCoordinator
         return $this->addAggregate($relation, $column, 'max');
     }
 
-    public function aggregateMin(
+    public function withAggMin(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
@@ -53,7 +53,7 @@ class AggregateCoordinator
         return $this->addAggregate($relation, $column, 'min');
     }
 
-    public function aggregateSum(
+    public function withAggSum(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
@@ -62,7 +62,7 @@ class AggregateCoordinator
         return $this->addAggregate($relation, $column, 'sum');
     }
 
-    public function aggregateAvg(
+    public function withAggAvg(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
@@ -71,7 +71,7 @@ class AggregateCoordinator
         return $this->addAggregate($relation, $column, 'avg');
     }
 
-    public function aggregateExists(string|array|null $relations = null): static
+    public function withAggExists(string|array|null $relations = null): static
     {
         if ($relations === null) {
             return $this->addAggregate(null, '*', 'exists');

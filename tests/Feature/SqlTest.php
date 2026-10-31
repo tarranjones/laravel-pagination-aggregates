@@ -60,9 +60,9 @@ function captureQueries(Closure $fn): array
 
 // ─── Single base aggregate ────────────────────────────────────────────────────
 
-it('single base aggregateCount fires a scalar COUNT and a paginate query', function (): void {
+it('single base withAggCount fires a scalar COUNT and a paginate query', function (): void {
     $queries = captureQueries(
-        fn () => Post::query()->paginateWithAggregates(5)->aggregateCount()->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withAggCount()->toArray()
     );
 
     expect($queries)->toBe([
@@ -71,9 +71,9 @@ it('single base aggregateCount fires a scalar COUNT and a paginate query', funct
     ]);
 });
 
-it('single base aggregateSum is batched with the paginator total into one CROSS JOIN, saving a COUNT query', function (): void {
+it('single base withAggSum is batched with the paginator total into one CROSS JOIN, saving a COUNT query', function (): void {
     $queries = captureQueries(
-        fn () => Comment::query()->paginateWithAggregates(5)->aggregateSum('votes')->toArray()
+        fn () => Comment::query()->paginateWithAggregates(5)->withAggSum('votes')->toArray()
     );
 
     // Only 2 queries: CROSS JOIN (SUM + injected total) + data page — no separate COUNT(*)
@@ -87,7 +87,7 @@ it('single base aggregateSum is batched with the paginator total into one CROSS 
 
 it('multiple base aggregates and the paginator total are batched into a single CROSS JOIN', function (): void {
     $queries = captureQueries(
-        fn () => Comment::query()->paginateWithAggregates(5)->aggregateMax('votes')->aggregateMin('votes')->toArray()
+        fn () => Comment::query()->paginateWithAggregates(5)->withAggMax('votes')->withAggMin('votes')->toArray()
     );
 
     // 2 queries: CROSS JOIN (MAX + MIN + injected total) + data page
@@ -97,12 +97,12 @@ it('multiple base aggregates and the paginator total are batched into a single C
         );
 });
 
-it('aggregateCount paired with aggregateExists batches both into one CROSS JOIN derived table', function (): void {
+it('withAggCount paired with withAggExists batches both into one CROSS JOIN derived table', function (): void {
     $queries = captureQueries(
-        fn () => Post::query()->paginateWithAggregates(5)->aggregateCount()->aggregateExists()->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withAggCount()->withAggExists()->toArray()
     );
 
-    // aggregateCount reused as total — no separate COUNT(*) paginator query
+    // withAggCount reused as total — no separate COUNT(*) paginator query
     expect($queries)->toHaveCount(2)
         ->and($queries[0])->toBe(
             'select COUNT(*) AS "_agg_row_count", MAX("agg_rows"."count") AS "count", MAX("agg_rows"."_agg_ecnt_exists") AS "_agg_ecnt_exists" from (select "posts"."id", "agg_posts"."count", "agg_posts"."_agg_ecnt_exists" from "posts" cross join (select COUNT(*) AS "count", COUNT(*) AS "_agg_ecnt_exists" from "posts") as "agg_posts") as "agg_rows" limit 1'
@@ -113,7 +113,7 @@ it('aggregateCount paired with aggregateExists batches both into one CROSS JOIN 
 
 it('constrained base aggregates with different constraints produce separate CROSS JOINs', function (): void {
     $queries = captureQueries(
-        fn () => Post::query()->paginateWithAggregates(5)->aggregateCount([
+        fn () => Post::query()->paginateWithAggregates(5)->withAggCount([
             'as a' => fn (Builder $builder) => $builder->where('id', 1),
             'as b' => fn (Builder $builder) => $builder->where('id', 2),
         ])->toArray()
@@ -126,9 +126,9 @@ it('constrained base aggregates with different constraints produce separate CROS
 
 it('constrained base aggregates sharing the same constraint are batched into one CROSS JOIN', function (): void {
     $queries = captureQueries(
-        fn () => Post::query()->paginateWithAggregates(5)->aggregateCount([
+        fn () => Post::query()->paginateWithAggregates(5)->withAggCount([
             'as a' => fn (Builder $builder) => $builder->where('id', '>', 0),
-        ])->aggregateMax([
+        ])->withAggMax([
             'as b' => fn (Builder $builder) => $builder->where('id', '>', 0),
         ], 'id')->toArray()
     );
@@ -142,7 +142,7 @@ it('constrained base aggregates sharing the same constraint are batched into one
 
 it('relation aggregates for the same relation are batched into one LEFT JOIN derived table', function (): void {
     $queries = captureQueries(
-        fn () => Post::query()->paginateWithAggregates(5)->aggregateCount('comments')->aggregateMax('comments', 'votes')->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withAggCount('comments')->withAggMax('comments', 'votes')->toArray()
     );
 
     expect($queries[0])->toBe(
@@ -153,7 +153,7 @@ it('relation aggregates for the same relation are batched into one LEFT JOIN der
 it('constrained relation aggregate applies WHERE inside the LEFT JOIN derived table', function (): void {
     $queries = captureQueries(
         fn () => Post::query()->paginateWithAggregates(5)
-            ->aggregateCount(['comments as high_votes' => fn (Builder $builder) => $builder->where('votes', '>', 3)])
+            ->withAggCount(['comments as high_votes' => fn (Builder $builder) => $builder->where('votes', '>', 3)])
             ->toArray()
     );
 
@@ -162,11 +162,11 @@ it('constrained relation aggregate applies WHERE inside the LEFT JOIN derived ta
     );
 });
 
-// ─── aggregateCount() total optimisation ──────────────────────────────────────────
+// ─── withAggCount() total optimisation ──────────────────────────────────────────
 
-it('aggregateCount reuses the aggregate as the LengthAwarePaginator total, saving a COUNT query', function (): void {
+it('withAggCount reuses the aggregate as the LengthAwarePaginator total, saving a COUNT query', function (): void {
     $queries = captureQueries(
-        fn () => Post::query()->paginateWithAggregates(5)->aggregateCount()->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withAggCount()->toArray()
     );
 
     // Only 2 queries: scalar COUNT (reused as total) + SELECT data page
@@ -177,18 +177,18 @@ it('aggregateCount reuses the aggregate as the LengthAwarePaginator total, savin
 
 it('unconstrained base aggregate is batched with the paginator total, saving a COUNT query', function (): void {
     $queries = captureQueries(
-        fn () => Post::query()->paginateWithAggregates(5)->aggregateMax('id')->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withAggMax('id')->toArray()
     );
 
     // 2 queries: CROSS JOIN (MAX + injected total) + data page
     expect($queries)->toHaveCount(2);
 });
 
-it('aggregateCount on a relation does not save the COUNT total query — three queries fire', function (): void {
-    // Only base aggregateCount() (no args) may substitute the paginator total.
-    // A relation aggregateCount('comments') must not be used as the total.
+it('withAggCount on a relation does not save the COUNT total query — three queries fire', function (): void {
+    // Only base withAggCount() (no args) may substitute the paginator total.
+    // A relation withAggCount('comments') must not be used as the total.
     $queries = captureQueries(
-        fn () => Post::query()->paginateWithAggregates(5)->aggregateCount('comments')->toArray()
+        fn () => Post::query()->paginateWithAggregates(5)->withAggCount('comments')->toArray()
     );
 
     expect($queries)->toHaveCount(3);
@@ -197,7 +197,7 @@ it('aggregateCount on a relation does not save the COUNT total query — three q
 it('single constrained base aggregate fires a scalar query, not a CROSS JOIN', function (): void {
     // A single constrained base aggregate still uses the scalar path (resolveSingleInstruction).
     $queries = captureQueries(
-        fn () => Post::query()->paginateWithAggregates(5)->aggregateCount([
+        fn () => Post::query()->paginateWithAggregates(5)->withAggCount([
             'as a_count' => fn (Builder $builder) => $builder->where('id', '>', 0),
         ])->toArray()
     );

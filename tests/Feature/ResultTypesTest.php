@@ -45,19 +45,19 @@ it('normalises single scalar base aggregates', function (string $method, string 
 
     expect(array_values($aggregates)[0])->toBe($expected);
 })->with([
-    'integer sum' => ['aggregateSum', 'quantity', 9],
-    'decimal sum' => ['aggregateSum', 'total', 35.75],
-    'integer avg' => ['aggregateAvg', 'quantity', 3.0],
+    'integer sum' => ['withAggSum', 'quantity', 9],
+    'decimal sum' => ['withAggSum', 'total', 35.75],
+    'integer avg' => ['withAggAvg', 'quantity', 3.0],
 ]);
 
 it('normalises batched base aggregates', function (): void {
     $aggregates = Order::query()
         ->paginateWithAggregates(1)
-        ->aggregateCount()
-        ->aggregateSum('quantity')
-        ->aggregateSum('total')
-        ->aggregateAvg('total')
-        ->aggregateExists(['as has_pending' => fn (Builder $builder): Builder => $builder->where('status', 'pending')])
+        ->withAggCount()
+        ->withAggSum('quantity')
+        ->withAggSum('total')
+        ->withAggAvg('total')
+        ->withAggExists(['as has_pending' => fn (Builder $builder): Builder => $builder->where('status', 'pending')])
         ->toArray()['aggregates'];
 
     expect($aggregates['count'])->toBe(3)
@@ -70,11 +70,11 @@ it('normalises batched base aggregates', function (): void {
 it('normalises relation aggregates', function (): void {
     $aggregates = Order::query()
         ->paginateWithAggregates(1)
-        ->aggregateCount('lines')
-        ->aggregateSum('lines', 'units')
-        ->aggregateSum('lines', 'price')
-        ->aggregateAvg('lines', 'units')
-        ->aggregateExists('lines')
+        ->withAggCount('lines')
+        ->withAggSum('lines', 'units')
+        ->withAggSum('lines', 'price')
+        ->withAggAvg('lines', 'units')
+        ->withAggExists('lines')
         ->toArray()['aggregates'];
 
     expect($aggregates['lines_count'])->toBe(3)
@@ -87,8 +87,8 @@ it('normalises relation aggregates', function (): void {
 it('normalises aggregates computed from the loaded page when the total is pre-known', function (): void {
     $aggregates = Order::query()
         ->paginateWithAggregates(10, total: 3)
-        ->aggregateSum('total')
-        ->aggregateAvg('quantity')
+        ->withAggSum('total')
+        ->withAggAvg('quantity')
         ->toArray()['aggregates'];
 
     expect($aggregates['sum_total'])->toBe(35.75)
@@ -99,9 +99,9 @@ it('returns zero sums and null averages for an empty result set', function (): v
     $aggregates = Order::query()
         ->where('status', 'refunded')
         ->paginateWithAggregates(10)
-        ->aggregateSum('total')
-        ->aggregateAvg('total')
-        ->aggregateSum('lines', 'price')
+        ->withAggSum('total')
+        ->withAggAvg('total')
+        ->withAggSum('lines', 'price')
         ->toArray()['aggregates'];
 
     expect($aggregates['sum_total'])->toBe(0)

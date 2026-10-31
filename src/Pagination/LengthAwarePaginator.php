@@ -179,7 +179,7 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
             return (int) ($aggregates[self::INJECTED_TOTAL_ALIAS] ?? 0);
         }
 
-        // Fall back to a user-defined unconstrained base COUNT (e.g. ->aggregateCount()).
+        // Fall back to a user-defined unconstrained base COUNT (e.g. ->withAggCount()).
         $instruction = $this->coordinator->findUnconstrainedBaseCountInstruction();
 
         return $instruction instanceof AggregateInstruction ? (int) ($aggregates[$instruction->alias] ?? 0) : null;

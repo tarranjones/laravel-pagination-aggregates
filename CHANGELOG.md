@@ -13,12 +13,12 @@
 
   | Before | After |
   |---|---|
-  | `withCount()` | `aggregateCount()` |
-  | `withSum()` | `aggregateSum()` |
-  | `withMax()` | `aggregateMax()` |
-  | `withMin()` | `aggregateMin()` |
-  | `withAvg()` | `aggregateAvg()` |
-  | `withExists()` | `aggregateExists()` |
+  | `withCount()` | `withAggCount()` |
+  | `withSum()` | `withAggSum()` |
+  | `withMax()` | `withAggMax()` |
+  | `withMin()` | `withAggMin()` |
+  | `withAvg()` | `withAggAvg()` |
+  | `withExists()` | `withAggExists()` |
   | `aggregate()` | `resolveAggregates()` |
 
   Arguments, aliases and output keys are unchanged.

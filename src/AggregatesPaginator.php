@@ -59,52 +59,52 @@ trait AggregatesPaginator
         $this->deferredProperties = [];
     }
 
-    public function aggregateCount(string|array|null $relations = null): static
+    public function withAggCount(string|array|null $relations = null): static
     {
-        $this->coordinator->aggregateCount(...func_get_args());
+        $this->coordinator->withAggCount(...func_get_args());
 
         return $this;
     }
 
-    public function aggregateMax(
+    public function withAggMax(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
-        $this->coordinator->aggregateMax($relation, $column);
+        $this->coordinator->withAggMax($relation, $column);
 
         return $this;
     }
 
-    public function aggregateMin(
+    public function withAggMin(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
-        $this->coordinator->aggregateMin($relation, $column);
+        $this->coordinator->withAggMin($relation, $column);
 
         return $this;
     }
 
-    public function aggregateSum(
+    public function withAggSum(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
-        $this->coordinator->aggregateSum($relation, $column);
+        $this->coordinator->withAggSum($relation, $column);
 
         return $this;
     }
 
-    public function aggregateAvg(
+    public function withAggAvg(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
     ): static {
-        $this->coordinator->aggregateAvg($relation, $column);
+        $this->coordinator->withAggAvg($relation, $column);
 
         return $this;
     }
 
-    public function aggregateExists(string|array|null $relations = null): static
+    public function withAggExists(string|array|null $relations = null): static
     {
-        $this->coordinator->aggregateExists(...func_get_args());
+        $this->coordinator->withAggExists(...func_get_args());
 
         return $this;
     }

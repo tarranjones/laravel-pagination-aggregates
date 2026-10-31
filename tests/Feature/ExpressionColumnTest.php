@@ -29,10 +29,10 @@ beforeEach(function (): void {
     ExprComment::query()->create(['expr_post_id' => $exprPost->id, 'content' => 'world', 'votes' => 5]);
 });
 
-it('aggregateMax accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
+it('withAggMax accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
     $paginator = ExprPost::query()
         ->paginateWithAggregates(10)
-        ->aggregateMax('exprComments', DB::raw('votes'));
+        ->withAggMax('exprComments', DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -40,10 +40,10 @@ it('aggregateMax accepts a DB::raw() Expression as column on a relation aggregat
         ->and($aggregates['expr_comments_max_votes'])->toBe(5);
 });
 
-it('aggregateMin accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
+it('withAggMin accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
     $paginator = ExprPost::query()
         ->paginateWithAggregates(10)
-        ->aggregateMin('exprComments', DB::raw('votes'));
+        ->withAggMin('exprComments', DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -51,10 +51,10 @@ it('aggregateMin accepts a DB::raw() Expression as column on a relation aggregat
         ->and($aggregates['expr_comments_min_votes'])->toBe(3);
 });
 
-it('aggregateSum accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
+it('withAggSum accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
     $paginator = ExprPost::query()
         ->paginateWithAggregates(10)
-        ->aggregateSum('exprComments', DB::raw('votes'));
+        ->withAggSum('exprComments', DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -62,10 +62,10 @@ it('aggregateSum accepts a DB::raw() Expression as column on a relation aggregat
         ->and($aggregates['expr_comments_sum_votes'])->toBe(8);
 });
 
-it('aggregateAvg accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
+it('withAggAvg accepts a DB::raw() Expression as column on a relation aggregate', function (): void {
     $paginator = ExprPost::query()
         ->paginateWithAggregates(10)
-        ->aggregateAvg('exprComments', DB::raw('votes'));
+        ->withAggAvg('exprComments', DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -73,10 +73,10 @@ it('aggregateAvg accepts a DB::raw() Expression as column on a relation aggregat
         ->and($aggregates['expr_comments_avg_votes'])->toEqualWithDelta(4.0, 0.001);
 });
 
-it('aggregateMax accepts a DB::raw() Expression as column on a base aggregate', function (): void {
+it('withAggMax accepts a DB::raw() Expression as column on a base aggregate', function (): void {
     $paginator = ExprComment::query()
         ->paginateWithAggregates(10)
-        ->aggregateMax(DB::raw('votes'));
+        ->withAggMax(DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -84,10 +84,10 @@ it('aggregateMax accepts a DB::raw() Expression as column on a base aggregate', 
         ->and($aggregates['max_votes'])->toBe(5);
 });
 
-it('aggregateSum accepts a DB::raw() Expression as column on a base aggregate', function (): void {
+it('withAggSum accepts a DB::raw() Expression as column on a base aggregate', function (): void {
     $paginator = ExprComment::query()
         ->paginateWithAggregates(10)
-        ->aggregateSum(DB::raw('votes'));
+        ->withAggSum(DB::raw('votes'));
 
     $aggregates = $paginator->toArray()['aggregates'];
 
