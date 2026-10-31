@@ -658,3 +658,15 @@ it('withCount on a relation does not replace the paginator total', function (): 
         ->and($payload['total'])->toBe(2)
         ->and($payload['aggregates']['comments_count'])->toBe(3);
 });
+
+it('BelongsToMany withExists is false without pivot rows and true once one exists', function (): void {
+    $before = Post::query()->paginateWithAggregates(10)->withExists('tags')->withCount('comments')->toArray()['aggregates'];
+
+    $tag = Tag::query()->create(['value' => 7]);
+    Post::query()->first()->tags()->attach($tag);
+
+    $after = Post::query()->paginateWithAggregates(10)->withExists('tags')->withCount('comments')->toArray()['aggregates'];
+
+    expect($before['tags_exists'])->toBeFalse()
+        ->and($after['tags_exists'])->toBeTrue();
+});

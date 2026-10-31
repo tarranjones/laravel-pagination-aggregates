@@ -121,6 +121,18 @@ class JoinQueryBuilder
                 continue;
             }
 
+            if ($instruction->function === 'exists') {
+                // EXISTS yields a boolean column on some drivers (e.g. PostgreSQL has no MAX(boolean)),
+                // so count matching rows instead and test the rolled-up count for > 0.
+                $cntCol = '_agg_ecnt_'.$instruction->alias;
+
+                $builder->withAggregate($this->aliasedRelation($instructionGroup, $cntCol), '*', 'count');
+
+                $existsCols[$instruction->alias] = $cntCol;
+
+                continue;
+            }
+
             $relations = $instruction->relations;
 
             if ($instructionGroup->constraints instanceof Closure) {
