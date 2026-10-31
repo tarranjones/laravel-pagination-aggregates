@@ -23,8 +23,6 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
      */
     private const string INJECTED_TOTAL_ALIAS = '__paginator_total';
 
-    private bool $initialized = false;
-
     public function __construct(
         Builder $builder,
         private ?int $pendingPerPage = null,
@@ -46,16 +44,12 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
             $resolvedPage,
             ['path' => PagePaginator::resolveCurrentPath(), 'pageName' => $this->pendingPageName],
         );
+
+        $this->deferPaginatorState('items', 'total', 'lastPage');
     }
 
     protected function initializePaginator(): void
     {
-        if ($this->initialized) {
-            return;
-        }
-
-        $this->initialized = true;
-
         if ($this->pendingTotal !== null) {
             // Total is pre-known — skip COUNT injection entirely.
             $columns = $this->pendingColumns;
@@ -90,23 +84,33 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
             // When unconstrained base aggregates exist but no base COUNT is present,
             // inject a hidden COUNT(*) so the total is computed in the same CROSS JOIN
             // derived table — avoiding a separate COUNT(*) query.
-            if ($this->coordinator->hasUnconstrainedBaseAggregates()
+            // Grouped, distinct or union queries need Laravel's own count-for-pagination
+            // logic, so the total is never derived from aggregates for those.
+            $canDeriveTotal = $this->coordinator->canDeriveTotalFromAggregates();
+
+            if ($canDeriveTotal
+                && $this->coordinator->hasUnconstrainedBaseAggregates()
                 && ! $this->coordinator->hasUnconstrainedBaseCount()) {
                 $this->coordinator->withPaginatorTotal(self::INJECTED_TOTAL_ALIAS);
             }
 
-            $aggregates = $this->coordinator->resolve();
+            $total = $canDeriveTotal
+                ? $this->extractTotalFromAggregates($this->coordinator->resolve())
+                : null;
 
             $lengthAwarePaginator = (clone $this->coordinator->builder())->paginate(
                 $this->pendingPerPage,
                 $this->pendingColumns,
                 $this->pendingPageName,
                 $this->pendingPage,
-                $this->extractTotalFromAggregates($aggregates),
+                $total,
             );
         }
 
-        $this->items = $lengthAwarePaginator->getCollection();
+        if (! $this->isPaginatorStateSet('items')) {
+            $this->items = $lengthAwarePaginator->getCollection();
+        }
+
         $this->total = $lengthAwarePaginator->total();
         $this->lastPage = $lengthAwarePaginator->lastPage();
         $this->perPage = $lengthAwarePaginator->perPage();
@@ -126,7 +130,7 @@ class LengthAwarePaginator extends BaseLengthAwarePaginator
             return $this;
         }
 
-        $this->initializePaginator();
+        $this->ensurePaginatorInitialized();
 
         // When a pre-known total is provided and all rows fit on one page, compute as many
         // aggregates as possible from the loaded Collection to avoid DB round-trips.

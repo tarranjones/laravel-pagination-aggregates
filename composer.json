@@ -12,16 +12,20 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "laravel/framework": "^12.0"
+        "illuminate/database": "^12.0 || ^13.0",
+        "illuminate/pagination": "^12.0 || ^13.0",
+        "illuminate/support": "^12.0 || ^13.0"
     },
     "require-dev": {
         "driftingly/rector-laravel": "^2.0",
+        "larastan/larastan": "^3.13",
         "laravel/boost": "^2.3",
         "laravel/pint": "^1.24",
         "nunomaduro/collision": "^8.6",
-        "orchestra/testbench": "^10.9",
-        "pestphp/pest": "^4.4",
-        "pestphp/pest-plugin-laravel": "^4.1",
+        "orchestra/testbench": "^10.9 || ^11.0",
+        "pestphp/pest": "^4.4 || ^5.0",
+        "pestphp/pest-plugin-laravel": "^4.1 || ^5.0",
+        "phpstan/phpstan": "^2.1",
         "rector/rector": "^2.0",
         "roave/security-advisories": "dev-latest"
     },
@@ -32,35 +36,37 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Tests\\": "tests/",
-            "Workbench\\App\\": "workbench/app/",
-            "Workbench\\Database\\Factories\\": "workbench/database/factories/",
-            "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
+            "Tests\\": "tests/"
         }
     },
     "scripts": {
         "test": [
-            "vendor/bin/pest --compact"
+            "@php vendor/bin/pest --compact"
+        ],
+        "analyse": [
+            "@php vendor/bin/phpstan analyse --memory-limit=1G"
+        ],
+        "format": [
+            "@php vendor/bin/pint"
         ],
         "rector": [
-            "vendor/bin/rector"
+            "@php vendor/bin/rector"
+        ],
+        "lint": [
+            "@php vendor/bin/pint --test",
+            "@php vendor/bin/rector --dry-run",
+            "@php vendor/bin/phpstan analyse --memory-limit=1G"
+        ],
+        "check": [
+            "@lint",
+            "@test"
         ],
         "post-autoload-dump": [
             "@clear",
             "@prepare"
         ],
         "clear": "@php vendor/bin/testbench package:purge-skeleton --ansi",
-        "prepare": "@php vendor/bin/testbench package:discover --ansi",
-        "build": "@php vendor/bin/testbench workbench:build --ansi",
-        "serve": [
-            "Composer\\Config::disableProcessTimeout",
-            "@build",
-            "@php vendor/bin/testbench serve --ansi"
-        ],
-        "lint": [
-            "@php vendor/bin/pint --ansi",
-            "@php vendor/bin/phpstan analyse --verbose --ansi"
-        ]
+        "prepare": "@php vendor/bin/testbench package:discover --ansi"
     },
     "extra": {
         "laravel": {

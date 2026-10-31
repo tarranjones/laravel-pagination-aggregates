@@ -3,8 +3,6 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -12,6 +10,8 @@ use TarranJones\LaravelPaginationAggregates\Pagination\CursorPaginator;
 use TarranJones\LaravelPaginationAggregates\Pagination\LengthAwarePaginator;
 use TarranJones\LaravelPaginationAggregates\Pagination\Paginator;
 use TarranJones\LaravelPaginationAggregates\PaginatorFactory;
+use Tests\Fixtures\Models\ShapeComment;
+use Tests\Fixtures\Models\ShapePost;
 
 uses(RefreshDatabase::class);
 
@@ -176,26 +176,3 @@ it('PaginatorFactory::paginate passes perPage through to the paginator', functio
 });
 
 // ─── Models ───────────────────────────────────────────────────────────────────
-
-class ShapePost extends Model
-{
-    protected $table = 'shape_posts';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    public function shapeComments(): HasMany
-    {
-        return $this->hasMany(ShapeComment::class);
-    }
-}
-
-class ShapeComment extends Model
-{
-    protected $table = 'shape_comments';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-}

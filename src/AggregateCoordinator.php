@@ -115,7 +115,21 @@ class AggregateCoordinator
      */
     public function hasUnconstrainedBaseAggregates(): bool
     {
-        return array_any($this->instructions, fn ($instruction): bool => $instruction->relations === null && $instruction->constraint === null);
+        return array_any($this->instructions, fn (AggregateInstruction $instruction): bool => $instruction->relations === null && $instruction->constraint === null);
+    }
+
+    /**
+     * Returns false when the base query is grouped, distinct or a union: a COUNT(*) over
+     * such a query does not equal the number of paginated rows.
+     */
+    public function canDeriveTotalFromAggregates(): bool
+    {
+        $query = $this->builder->getQuery();
+
+        return empty($query->groups)
+            && empty($query->havings)
+            && empty($query->unions)
+            && $query->distinct === false;
     }
 
     /**

@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
+use Tests\Fixtures\Models\HoProfile;
+use Tests\Fixtures\Models\HoUser;
 
 uses(RefreshDatabase::class);
 
@@ -122,26 +122,3 @@ it('withMax and withMin on HasOne are batched into a single LEFT JOIN', function
 });
 
 // ─── Models ───────────────────────────────────────────────────────────────────
-
-class HoUser extends Model
-{
-    protected $table = 'ho_users';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    public function hoProfile(): HasOne
-    {
-        return $this->hasOne(HoProfile::class);
-    }
-}
-
-class HoProfile extends Model
-{
-    protected $table = 'ho_profiles';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-}

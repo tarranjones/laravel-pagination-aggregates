@@ -28,7 +28,7 @@ class JoinQueryBuilder
         foreach ($groups as $group) {
             if ($group->type === 'base') {
                 $this->buildBaseGroup($group, $builder, $query, $grammar, $joinAliasCounters, $existsCols);
-            } elseif ($group->type === 'relation' && ! $group->isHasOneOrMany) {
+            } elseif (! $group->isHasOneOrMany) {
                 $this->buildNonHasOneOrManyGroup($group, $query, $existsCols);
             } else {
                 $this->buildHasOneOrManyGroup($group, $query, $grammar, $joinAliasCounters, $existsCols);
@@ -95,8 +95,11 @@ class JoinQueryBuilder
     }
 
     /**
-     * Non-HasOneOrMany relations (e.g. BelongsToMany): use correlated withAggregate()
-     * subqueries. AVG is deferred to post-processing in AggregateResolver.
+     * Non-HasOneOrMany relations (BelongsTo, BelongsToMany, HasManyThrough, morphs, ...):
+     * use correlated withAggregate() subqueries, one value per base row.
+     *
+     * AVG is split into correlated SUM and COUNT columns so the summarising query can
+     * compute a global SUM / COUNT instead of an average of per-row averages.
      *
      * @param  array<string, mixed>  $existsCols
      */
@@ -107,12 +110,13 @@ class JoinQueryBuilder
     ): void {
         foreach ($instructionGroup->instructions as $instruction) {
             if ($instruction->function === 'avg') {
-                $existsCols[$instruction->alias] = [
-                    'type' => 'avg_non_has_one_or_many',
-                    'relation' => $instructionGroup->relation,
-                    'constraints' => $instructionGroup->constraints,
-                    'column' => $instruction->column,
-                ];
+                $sumCol = '_agg_sum_'.$instruction->alias;
+                $cntCol = '_agg_cnt_'.$instruction->alias;
+
+                $builder->withAggregate($this->aliasedRelation($instructionGroup, $sumCol), $instruction->column, 'sum');
+                $builder->withAggregate($this->aliasedRelation($instructionGroup, $cntCol), $instruction->column, 'count');
+
+                $existsCols[$instruction->alias] = ['sum' => $sumCol, 'count' => $cntCol];
 
                 continue;
             }
@@ -128,6 +132,20 @@ class JoinQueryBuilder
                 $builder->withAggregate(array_key_first($relations), $instruction->column, $instruction->function);
             }
         }
+    }
+
+    /**
+     * Build a withAggregate() relation argument that carries an explicit alias and the group constraint.
+     *
+     * @return string|array<string, Closure>
+     */
+    private function aliasedRelation(InstructionGroup $instructionGroup, string $alias): string|array
+    {
+        $name = sprintf('%s as %s', $instructionGroup->baseName, $alias);
+
+        return $instructionGroup->constraints instanceof Closure
+            ? [$name => $instructionGroup->constraints]
+            : $name;
     }
 
     /**

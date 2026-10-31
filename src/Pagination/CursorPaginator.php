@@ -15,8 +15,6 @@ class CursorPaginator extends BaseCursorPaginator
 {
     use AggregatesPaginator;
 
-    private bool $initialized = false;
-
     public function __construct(
         Builder $builder,
         private ?int $pendingPerPage = null,
@@ -42,16 +40,12 @@ class CursorPaginator extends BaseCursorPaginator
                 'parameters' => [],
             ],
         );
+
+        $this->deferPaginatorState('items', 'hasMore', 'parameters');
     }
 
     protected function initializePaginator(): void
     {
-        if ($this->initialized) {
-            return;
-        }
-
-        $this->initialized = true;
-
         $cursorPaginator = (clone $this->coordinator->builder())->cursorPaginate(
             $this->pendingPerPage,
             $this->pendingColumns,
@@ -59,7 +53,10 @@ class CursorPaginator extends BaseCursorPaginator
             $this->pendingCursor,
         );
 
-        $this->items = $cursorPaginator->getCollection();
+        if (! $this->isPaginatorStateSet('items')) {
+            $this->items = $cursorPaginator->getCollection();
+        }
+
         $this->hasMore = $cursorPaginator->hasMore;
         $this->parameters = $cursorPaginator->getOptions()['parameters'];
         $this->options['parameters'] = $this->parameters;

@@ -12,13 +12,14 @@ Attach aggregate data (count, sum, max, min, avg, exists) to Laravel paginated r
 
 - Add rollups alongside paginated data while keeping the native paginator shape.
 - Works with length-aware, simple, and cursor pagination.
-- Queries are deferred until the paginator is serialized — no wasted queries.
+- Queries are deferred until the paginator is first read — no wasted queries.
+- Aggregation happens in the database: only the current page of models is ever loaded into PHP.
 - Relation aggregates compute correct global values — no average-of-averages bug.
 
 ## Requirements
 
-- PHP ^8.4
-- Laravel ^12.0
+- PHP ^8.4 (tested on 8.4 and 8.5; 8.6 tested as pre-release)
+- Laravel 12 or 13
 
 ## Installation
 
@@ -98,7 +99,7 @@ Order::query()->simplePaginateWithAggregates($perPage);   // Paginator (no total
 Order::query()->cursorPaginateWithAggregates($perPage);   // CursorPaginator
 ```
 
-Pagination queries are deferred until serialization (`toArray()`, `toJson()`, or `toResponse()`). No database queries run until you need the data.
+Pagination queries are deferred until the paginator is first read — iterating it, calling `items()`, `total()`, `count()`, `toArray()`/`toJson()`, or passing it to an API resource. Declare all aggregates before reading the paginator so they can be batched.
 
 ### Resolving aggregates directly
 
@@ -307,28 +308,36 @@ LEFT JOIN (
 ) AS `agg_comments` ON `agg_comments`.`post_id` = `posts`.`id`
 ```
 
-### BelongsToMany and other relation types
+### BelongsTo, BelongsToMany and other relation types
 
-Relations that are not `HasOne` / `HasMany` fall back to correlated subqueries via Laravel's `withAggregate`. Averages are always computed as `SUM / COUNT` across the full result set to avoid the average-of-averages problem.
+Relations that are not `HasOne` / `HasMany` fall back to correlated subqueries via Laravel's `withAggregate`. Averages are computed from correlated `SUM` and `COUNT` columns, so the result is a global `SUM / COUNT` across the full result set rather than an average of averages.
+
+### Summarising query
+
+The join query above yields one row per base-query row. It is always wrapped in a derived table and collapsed to a single row in the database, so the result set is never transferred to PHP:
+
+```sql
+SELECT COUNT(*) AS `_agg_row_count`,
+       SUM(`agg_rows`.`comments_count`) AS `comments_count`,
+       MAX(`agg_rows`.`comments_max_votes`) AS `comments_max_votes`
+FROM (/* join query */) AS `agg_rows`
+LIMIT 1
+```
 
 ## Notes
 
 - Aggregates reflect the full base query, not just the current page.
 - When the base query returns no rows, relation aggregates return `0` for count/sum and `null` for max/min/avg/exists.
-- Pagination queries are deferred until the paginator is serialized (`toArray()`, `toJson()`, or `toResponse()`).
+- Pagination queries are deferred until the paginator is first read.
+- For `groupBy()`, `having()`, `distinct()` or union base queries the paginator `total` is always computed by Laravel's own count query. Base-query aggregates (`withCount()`, `withSum('column')`, …) on grouped queries are evaluated per group and are not supported; relation aggregates are unaffected.
 
 ## Testing
 
 ```bash
-composer test
-```
-
-```bash
-vendor/bin/pint --test
-```
-
-```bash
-vendor/bin/rector --dry-run
+composer test      # Pest
+composer analyse   # PHPStan (Larastan)
+composer lint      # Pint --test, Rector --dry-run, PHPStan
+composer check     # lint + test
 ```
 
 ## Release

@@ -1,15 +1,14 @@
 <?php
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use TarranJones\LaravelPaginationAggregates\AggregateInstruction;
+use Tests\Fixtures\Models\Comment;
+use Tests\Fixtures\Models\Post;
+use Tests\Fixtures\Models\Tag;
 
 uses(RefreshDatabase::class);
 
@@ -313,53 +312,6 @@ it('withAvg on BelongsToMany with a closure constraint averages only matching pi
     expect($agg)->toHaveKey('high_tag_avg')
         ->and($agg['high_tag_avg'])->toEqualWithDelta(5.0, 0.001);
 });
-
-class Post extends Model
-{
-    protected $table = 'posts';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    public function comments(): HasMany
-    {
-        return $this->hasMany(Comment::class);
-    }
-
-    public function tags(): BelongsToMany
-    {
-        return $this->belongsToMany(Tag::class);
-    }
-}
-
-class Comment extends Model
-{
-    protected $table = 'comments';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    public function post(): BelongsTo
-    {
-        return $this->belongsTo(Post::class);
-    }
-}
-
-class Tag extends Model
-{
-    protected $table = 'tags';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    public function posts(): BelongsToMany
-    {
-        return $this->belongsToMany(Post::class);
-    }
-}
 
 it('withCount with no parameters returns total count', function (): void {
     $paginator = Post::query()

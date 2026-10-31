@@ -8,13 +8,17 @@ use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasOneOrMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Database\Query\Expression;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Query\Grammars\Grammar;
 use TarranJones\LaravelPaginationAggregates\AggregateInstruction;
 use TarranJones\LaravelPaginationAggregates\AliasResolver;
 
 class AggregateResolver
 {
+    /**
+     * Alias for the number of base-query rows seen by the summarising query.
+     */
+    private const string ROW_COUNT_ALIAS = '_agg_row_count';
+
     /**
      * @param  AggregateInstruction[]  $instructions
      * @return array<string, mixed>
@@ -36,9 +40,9 @@ class AggregateResolver
 
         [$query, $existsCols] = (new JoinQueryBuilder)->build($groups, $builder, $grammar);
 
-        $results = $query->get();
+        $row = $this->summarise($query, $instructions, $existsCols, $grammar);
 
-        if ($results->isEmpty()) {
+        if ((int) ($row->{self::ROW_COUNT_ALIAS} ?? 0) === 0) {
             $meta = [];
             foreach ($instructions as $instruction) {
                 $meta[$instruction->alias] = match ($instruction->function) {
@@ -50,16 +54,57 @@ class AggregateResolver
             return $meta;
         }
 
-        $meta = $this->aggregateResults($results, $instructions, $existsCols);
+        return $this->aggregateResults($row, $instructions, $existsCols);
+    }
 
-        // Handle AVG for non-HasOneOrMany relations with a single query per instruction
-        foreach ($existsCols as $alias => $colInfo) {
-            if (is_array($colInfo) && isset($colInfo['type']) && $colInfo['type'] === 'avg_non_has_one_or_many') {
-                $meta[$alias] = $this->resolveNonHasOneOrManyAvg($colInfo['relation'], $colInfo['constraints'], $colInfo['column'], $builder);
+    /**
+     * Collapse the per-parent-row join query into a single row inside the database.
+     *
+     * The join query yields one row per base-query row; wrapping it in a derived table and
+     * aggregating there means only one row ever reaches PHP, however large the result set.
+     * Relation values are rolled up (SUM/MAX/MIN) across parents; base values are identical
+     * on every row, so MAX() simply picks that value.
+     *
+     * @param  AggregateInstruction[]  $instructions
+     * @param  array<string, string|array{sum: string, count: string}>  $existsCols
+     */
+    private function summarise(Builder $query, array $instructions, array $existsCols, Grammar $grammar): object
+    {
+        $query->reorder();
+
+        $selects = ['COUNT(*) AS '.$grammar->wrap(self::ROW_COUNT_ALIAS)];
+
+        foreach ($instructions as $instruction) {
+            $isBase = $instruction->relations === null;
+            $colInfo = $existsCols[$instruction->alias] ?? null;
+
+            if ($colInfo === null) {
+                $fn = match (true) {
+                    $isBase => 'MAX',
+                    in_array($instruction->function, ['count', 'sum'], true) => 'SUM',
+                    $instruction->function === 'min' => 'MIN',
+                    default => 'MAX',
+                };
+
+                $selects[] = $this->outerAggregate($fn, $instruction->alias, $grammar);
+            } elseif (is_string($colInfo)) {
+                $selects[] = $this->outerAggregate('MAX', $colInfo, $grammar);
+            } else {
+                $fn = $isBase ? 'MAX' : 'SUM';
+                $selects[] = $this->outerAggregate($fn, $colInfo['sum'], $grammar);
+                $selects[] = $this->outerAggregate($fn, $colInfo['count'], $grammar);
             }
         }
 
-        return $meta;
+        return $query->getQuery()->newQuery()
+            ->fromSub($query, 'agg_rows')
+            ->selectRaw(implode(', ', $selects))
+            ->first() ?? (object) [];
+    }
+
+    private function outerAggregate(string $function, string $column, Grammar $grammar): string
+    {
+        return sprintf('%s(%s) AS %s', $function, $grammar->wrap('agg_rows.'.$column), $grammar->wrap($column));
     }
 
     /**
@@ -117,21 +162,19 @@ class AggregateResolver
             if ($instruction->relations === null) {
                 $key = 'base:'.$this->constraintKey($instruction->constraint, clone $builder);
 
-                if (! isset($baseAccum[$key])) {
-                    $baseAccum[$key] = [
-                        'meta' => [
-                            'type' => 'base',
-                            'baseName' => null,
-                            'constraints' => $instruction->constraint,
-                            'table' => $builder->getModel()->getTable(),
-                            'fk' => null,
-                            'localKey' => null,
-                            'isHasOneOrMany' => true,
-                            'relation' => null,
-                        ],
-                        'instructions' => [],
-                    ];
-                }
+                $baseAccum[$key] ??= [
+                    'meta' => [
+                        'type' => 'base',
+                        'baseName' => null,
+                        'constraints' => $instruction->constraint,
+                        'table' => $builder->getModel()->getTable(),
+                        'fk' => null,
+                        'localKey' => null,
+                        'isHasOneOrMany' => true,
+                        'relation' => null,
+                    ],
+                    'instructions' => [],
+                ];
 
                 $baseAccum[$key]['instructions'][] = $instruction;
 
@@ -146,36 +189,47 @@ class AggregateResolver
 
             $key = $baseName.':'.$this->relationConstraintKey($constraints, $relation);
 
-            if (! isset($relAccum[$key])) {
-                $relAccum[$key] = [
-                    'meta' => [
-                        'type' => 'relation',
-                        'baseName' => $baseName,
-                        'constraints' => $constraints,
-                        'table' => $relation->getRelated()->getTable(),
-                        'fk' => $isHasOneOrMany ? $relation->getForeignKeyName() : null,
-                        'localKey' => $isHasOneOrMany ? $builder->getModel()->getQualifiedKeyName() : null,
-                        'isHasOneOrMany' => $isHasOneOrMany,
-                        'relation' => $relation,
-                    ],
-                    'instructions' => [],
-                ];
-            }
+            $relAccum[$key] ??= [
+                'meta' => [
+                    'type' => 'relation',
+                    'baseName' => $baseName,
+                    'constraints' => $constraints,
+                    'table' => $relation->getRelated()->getTable(),
+                    'fk' => $isHasOneOrMany ? $relation->getForeignKeyName() : null,
+                    'localKey' => $isHasOneOrMany ? $builder->getModel()->getQualifiedKeyName() : null,
+                    'isHasOneOrMany' => $isHasOneOrMany,
+                    'relation' => $relation,
+                ],
+                'instructions' => [],
+            ];
 
             $relAccum[$key]['instructions'][] = $instruction;
         }
 
-        $groups = [];
+        return array_map(
+            $this->makeGroup(...),
+            [...array_values($baseAccum), ...array_values($relAccum)],
+        );
+    }
 
-        foreach ($baseAccum as $item) {
-            $groups[] = new InstructionGroup(...$item['meta'], instructions: $item['instructions']);
-        }
+    /**
+     * @param  array{meta: array<string, mixed>, instructions: AggregateInstruction[]}  $item
+     */
+    private function makeGroup(array $item): InstructionGroup
+    {
+        $meta = $item['meta'];
 
-        foreach ($relAccum as $item) {
-            $groups[] = new InstructionGroup(...$item['meta'], instructions: $item['instructions']);
-        }
-
-        return $groups;
+        return new InstructionGroup(
+            type: $meta['type'],
+            baseName: $meta['baseName'],
+            constraints: $meta['constraints'],
+            table: $meta['table'],
+            fk: $meta['fk'],
+            localKey: $meta['localKey'],
+            instructions: $item['instructions'],
+            isHasOneOrMany: $meta['isHasOneOrMany'],
+            relation: $meta['relation'],
+        );
     }
 
     private function constraintKey(?Closure $constraint, Builder $builder): string
@@ -202,122 +256,56 @@ class AggregateResolver
     }
 
     /**
-     * Aggregate join-query results into the final metadata array.
+     * Map the summarised row onto the final metadata array.
      *
      * @param  AggregateInstruction[]  $instructions
-     * @param  array<string, string|array>  $existsCols
+     * @param  array<string, string|array{sum: string, count: string}>  $existsCols
      * @return array<string, mixed>
      */
-    private function aggregateResults(Collection $results, array $instructions, array $existsCols): array
+    private function aggregateResults(object $row, array $instructions, array $existsCols): array
     {
         $meta = [];
 
         foreach ($instructions as $instruction) {
-            $alias = $instruction->alias;
-
-            $meta[$alias] = $instruction->relations === null
-                ? $this->resolveBaseResult($instruction, $results, $existsCols)
-                : $this->resolveRelationResult($instruction, $results, $existsCols);
+            $meta[$instruction->alias] = $this->resolveResult($instruction, $row, $existsCols[$instruction->alias] ?? null);
         }
 
         return $meta;
     }
 
     /**
-     * Resolve a single base-query aggregate from the join results.
-     * Base aggregates are the same value in every row — read from the first.
-     *
-     * @param  array<string, string|array>  $existsCols
+     * @param  string|array{sum: string, count: string}|null  $colInfo
      */
-    private function resolveBaseResult(AggregateInstruction $aggregateInstruction, Collection $results, array $existsCols): mixed
+    private function resolveResult(AggregateInstruction $aggregateInstruction, object $row, string|array|null $colInfo): mixed
     {
-        $alias = $aggregateInstruction->alias;
-        $colInfo = $existsCols[$alias] ?? null;
-
         if ($colInfo === null) {
-            return $results->first()->getAttribute($alias);
-        }
-
-        if (is_array($colInfo)) {
-            // AVG: stored as SUM/COUNT pair
-            $sum = $results->first()->getAttribute($colInfo['sum']);
-            $count = $results->first()->getAttribute($colInfo['count']);
-
-            return $count > 0 ? $sum / $count : null;
-        }
-
-        return (bool) ($results->first()->getAttribute($colInfo) ?? 0);
-    }
-
-    /**
-     * Resolve a single relation aggregate by aggregating values across all rows.
-     *
-     * @param  array<string, string|array>  $existsCols
-     */
-    private function resolveRelationResult(AggregateInstruction $aggregateInstruction, Collection $results, array $existsCols): mixed
-    {
-        $alias = $aggregateInstruction->alias;
-        $colInfo = $existsCols[$alias] ?? null;
-
-        if ($colInfo === null) {
-            $values = $results->pluck($alias);
+            $value = $row->{$aggregateInstruction->alias} ?? null;
 
             return match ($aggregateInstruction->function) {
-                'count', 'sum' => $values->sum(),
-                'max' => $values->max(),
-                'min' => $values->min(),
-                'exists' => (bool) $values->filter()->count(),
-                default => null,
+                'count' => (int) ($value ?? 0),
+                'sum' => $aggregateInstruction->relations === null ? $value : $this->normalizeNumeric($value ?? 0),
+                'exists' => (bool) $value,
+                default => $value,
             };
         }
 
-        if (is_array($colInfo)) {
-            // avg_non_has_one_or_many is handled by post-processing in resolve()
-            if (isset($colInfo['type']) && $colInfo['type'] === 'avg_non_has_one_or_many') {
-                return null;
-            }
-
-            // AVG: global sum/count across all rows
-            $totalSum = $results->sum($colInfo['sum']);
-            $totalCount = $results->sum($colInfo['count']);
-
-            return $totalCount > 0 ? $totalSum / $totalCount : null;
+        if (is_string($colInfo)) {
+            // EXISTS via COUNT(*) column
+            return (int) ($row->{$colInfo} ?? 0) > 0;
         }
 
-        // EXISTS via count column
-        return (bool) $results->sum(fn ($m): int => (int) ($m->getAttribute($colInfo) ?? 0));
+        // AVG: global SUM / COUNT, never an average of averages
+        $sum = $row->{$colInfo['sum']} ?? null;
+        $count = (int) ($row->{$colInfo['count']} ?? 0);
+
+        return $count > 0 ? $sum / $count : null;
     }
 
     /**
-     * Resolve AVG for non-HasOneOrMany relations (e.g., BelongsToMany).
-     *
-     * Uses getRelationExistenceQuery with the per-row whereColumn stripped so that
-     * the query computes the global average across all parent IDs rather than a
-     * correlated per-row result.
+     * Drivers such as MySQL return SUM() as a numeric string; keep int/float results consistent.
      */
-    private function resolveNonHasOneOrManyAvg(Relation $relation, ?Closure $constraints, Expression|string $column, Builder $builder): mixed
+    private function normalizeNumeric(mixed $value): mixed
     {
-        $existenceQuery = $relation->getRelationExistenceQuery(
-            $relation->getRelated()->newQuery(),
-            $builder,
-            new Expression('*'),
-        );
-
-        // Remove correlated whereColumn to make it a global aggregate
-        $existenceQuery->getQuery()->wheres = array_values(array_filter(
-            $existenceQuery->getQuery()->wheres,
-            fn (array $where): bool => $where['type'] !== 'Column',
-        ));
-
-        if ($constraints instanceof Closure) {
-            $constraints($existenceQuery);
-        }
-
-        $parentIds = (clone $builder)->select($builder->getModel()->getQualifiedKeyName());
-        $qualifiedColumn = $relation->getRelated()->qualifyColumn((string) $column);
-
-        return $existenceQuery
-            ->whereIn($relation->getExistenceCompareKey(), $parentIds)
-            ->avg($qualifiedColumn);
+        return is_string($value) && is_numeric($value) ? $value + 0 : $value;
     }
 }

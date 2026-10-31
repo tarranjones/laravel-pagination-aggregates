@@ -6,10 +6,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-
-// Note: Post and Comment model classes are defined in AggregatesPaginatorTest.php.
-// Pest loads test files alphabetically, so AggregatesPaginatorTest loads before PreKnownTotalTest,
-// making those classes available here without redefinition.
+use Tests\Fixtures\Models\Comment;
+use Tests\Fixtures\Models\Post;
 
 uses(RefreshDatabase::class);
 

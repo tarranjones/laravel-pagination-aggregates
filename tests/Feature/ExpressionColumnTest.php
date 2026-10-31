@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Fixtures\Models\ExprComment;
+use Tests\Fixtures\Models\ExprPost;
 
 uses(RefreshDatabase::class);
 
@@ -96,26 +96,3 @@ it('withSum accepts a DB::raw() Expression as column on a base aggregate', funct
 });
 
 // ─── Models ───────────────────────────────────────────────────────────────────
-
-class ExprPost extends Model
-{
-    protected $table = 'expr_posts';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-
-    public function exprComments(): HasMany
-    {
-        return $this->hasMany(ExprComment::class);
-    }
-}
-
-class ExprComment extends Model
-{
-    protected $table = 'expr_comments';
-
-    protected $guarded = [];
-
-    public $timestamps = false;
-}

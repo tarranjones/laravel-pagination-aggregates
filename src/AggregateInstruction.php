@@ -20,6 +20,8 @@ readonly class AggregateInstruction
         /** Constraint closure for direct (base-query) aggregates only. */
         public ?Closure $constraint = null,
     ) {
+        // Runtime guard for callers that bypass static analysis.
+        // @phpstan-ignore function.alreadyNarrowedType
         if (! in_array($function, ['count', 'max', 'min', 'sum', 'avg', 'exists'], true)) {
             throw new InvalidArgumentException(sprintf("Invalid aggregate function '%s'. Must be one of: count, max, min, sum, avg, exists.", $function));
         }
