@@ -6,6 +6,7 @@ namespace TarranJones\LaravelPaginationAggregates\Resolvers;
 
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOneOrMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Query\Grammars\Grammar;
@@ -21,6 +22,7 @@ class AggregateResolver
 
     /**
      * @param  AggregateInstruction[]  $instructions
+     * @param  Builder<*>  $builder
      * @return array<string, mixed>
      */
     public function resolve(array $instructions, Builder $builder): array
@@ -47,6 +49,7 @@ class AggregateResolver
      * result rows via a derived table; relation aggregates still use the join query.
      *
      * @param  AggregateInstruction[]  $instructions
+     * @param  Builder<*>  $builder
      * @return array<string, mixed>
      */
     private function resolveForDerivedQuery(array $instructions, Builder $builder): array
@@ -72,6 +75,9 @@ class AggregateResolver
      * Wrap a grouped / DISTINCT / UNION query in a derived table aliased as the model's own table,
      * so relation joins and correlated subqueries (which reference `table.column`) resolve against
      * its result rows. The rows must expose the columns the relation uses (e.g. the foreign key).
+     *
+     * @param  Builder<*>  $builder
+     * @return Builder<*>
      */
     private function wrapAsModelTable(Builder $builder): Builder
     {
@@ -82,6 +88,7 @@ class AggregateResolver
 
     /**
      * @param  AggregateInstruction[]  $instructions
+     * @param  Builder<*>  $builder
      * @return array<string, mixed>
      */
     private function resolveJoined(array $instructions, Builder $builder): array
@@ -118,6 +125,7 @@ class AggregateResolver
      *
      * @param  AggregateInstruction[]  $instructions
      * @param  array<string, string|array{sum: string, count: string}>  $existsCols
+     * @param  Builder<*>  $query
      */
     private function summarise(Builder $query, array $instructions, array $existsCols, Grammar $grammar): object
     {
@@ -147,9 +155,12 @@ class AggregateResolver
             }
         }
 
+        /** @var literal-string $sql aggregate expressions over grammar-wrapped identifiers */
+        $sql = implode(', ', $selects);
+
         return $query->getQuery()->newQuery()
             ->fromSub($query, 'agg_rows')
-            ->selectRaw(implode(', ', $selects))
+            ->selectRaw($sql)
             ->first() ?? (object) [];
     }
 
@@ -164,12 +175,13 @@ class AggregateResolver
      * This is more efficient than building a derived table for just one aggregate.
      * Only called for base query aggregates (relations === null).
      *
+     * @param  Builder<*>  $builder
      * @return array<string, mixed>
      */
     private function resolveSingleInstruction(AggregateInstruction $aggregateInstruction, Builder $builder): array
     {
         $alias = $aggregateInstruction->alias;
-        $column = $aggregateInstruction->column;
+        $column = $aggregateInstruction->column ?? '*';
 
         $query = clone $builder;
 
@@ -197,6 +209,7 @@ class AggregateResolver
      * - Relation instructions are grouped by relation name + serialized constraints.
      *
      * @param  AggregateInstruction[]  $instructions
+     * @param  Builder<*>  $builder
      * @return InstructionGroup[]
      */
     private function groupInstructions(array $instructions, Builder $builder): array
@@ -206,7 +219,7 @@ class AggregateResolver
         /** @var array<string, array{meta: array<string, mixed>, instructions: AggregateInstruction[]}> */
         $relAccum = [];
 
-        /** @var array<string, Relation> */
+        /** @var array<string, Relation<Model, Model, mixed>> */
         $relationCache = [];
 
         foreach ($instructions as $instruction) {
@@ -285,6 +298,8 @@ class AggregateResolver
 
     /**
      * Identify a constraint closure by the SQL it produces, so identical constraints share a query.
+     *
+     * @param  Builder<*>  $builder
      */
     public static function constraintKey(?Closure $constraint, Builder $builder): string
     {

@@ -26,6 +26,9 @@ class AggregateCoordinator
      */
     public function __construct(private readonly Grammar $grammar) {}
 
+    /**
+     * @param  string|array<int|string, mixed>|null  $relations
+     */
     public function withAggCount(string|array|null $relations = null): static
     {
         if ($relations === null) {
@@ -39,6 +42,9 @@ class AggregateCoordinator
         );
     }
 
+    /**
+     * @param  Expression|string|array<int|string, mixed>|null  $relation
+     */
     public function withAggMax(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
@@ -48,6 +54,9 @@ class AggregateCoordinator
         return $this->addAggregate($relation, $column, 'max');
     }
 
+    /**
+     * @param  Expression|string|array<int|string, mixed>|null  $relation
+     */
     public function withAggMin(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
@@ -57,6 +66,9 @@ class AggregateCoordinator
         return $this->addAggregate($relation, $column, 'min');
     }
 
+    /**
+     * @param  Expression|string|array<int|string, mixed>|null  $relation
+     */
     public function withAggSum(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
@@ -66,6 +78,9 @@ class AggregateCoordinator
         return $this->addAggregate($relation, $column, 'sum');
     }
 
+    /**
+     * @param  Expression|string|array<int|string, mixed>|null  $relation
+     */
     public function withAggAvg(
         Expression|string|array|null $relation = null,
         Expression|string|null $column = null,
@@ -75,6 +90,9 @@ class AggregateCoordinator
         return $this->addAggregate($relation, $column, 'avg');
     }
 
+    /**
+     * @param  string|array<int|string, mixed>|null  $relations
+     */
     public function withAggExists(string|array|null $relations = null): static
     {
         if ($relations === null) {
@@ -106,6 +124,9 @@ class AggregateCoordinator
     /**
      * Returns false when the base query is grouped, distinct or a union: a COUNT(*) over
      * such a query does not equal the number of paginated rows.
+     */
+    /**
+     * @param  Builder<*>  $builder
      */
     public function canDeriveTotalFromAggregates(Builder $builder): bool
     {
@@ -144,6 +165,10 @@ class AggregateCoordinator
         return $this;
     }
 
+    /**
+     * @param  string|array<int|string, mixed>|null  $relations
+     * @param  'count'|'max'|'min'|'sum'|'avg'|'exists'  $function
+     */
     private function addAggregate(
         string|array|null $relations,
         Expression|string $column,
@@ -163,6 +188,9 @@ class AggregateCoordinator
         return $this->addRelationAggregates($relations, $column, $function);
     }
 
+    /**
+     * @param  'count'|'max'|'min'|'sum'|'avg'|'exists'  $function
+     */
     private function addBaseAggregate(
         Expression|string $column,
         string $function,
@@ -184,6 +212,7 @@ class AggregateCoordinator
 
     /**
      * @param  array<int|string, mixed>  $relations
+     * @param  'count'|'max'|'min'|'sum'|'avg'|'exists'  $function
      */
     private function addRelationAggregates(
         array $relations,
@@ -193,6 +222,10 @@ class AggregateCoordinator
         foreach ($relations as $name => $constraints) {
             if (! is_string($name)) {
                 [$name, $constraints] = [$constraints, null];
+            }
+
+            if (! is_string($name)) {
+                throw new InvalidArgumentException('Aggregate relations must be relation names, or relation names mapped to constraint closures.');
             }
 
             if ($baseAlias = AliasResolver::baseAlias($name)) {
@@ -223,12 +256,27 @@ class AggregateCoordinator
     }
 
     /**
-     * @return array{0: Expression|string|array|null, 1: Expression|string}
+     * Support both `withAggSum('column')` (base query) and `withAggSum('relation', 'column')`.
+     *
+     * @param  Expression|string|array<int|string, mixed>|null  $relation
+     * @return array{0: string|array<int|string, mixed>|null, 1: Expression|string}
      */
     private function normalizeAggregateParams(
         Expression|string|array|null $relation,
         Expression|string|null $column,
     ): array {
-        return $column === null ? [null, $relation] : [$relation, $column];
+        if ($column === null) {
+            if ($relation === null || is_array($relation)) {
+                throw new InvalidArgumentException("A column is required, e.g. withAggSum('votes'), withAggSum('comments', 'votes') or withAggSum(['as alias' => fn (\$query) => ...], 'votes').");
+            }
+
+            return [null, $relation];
+        }
+
+        if ($relation instanceof Expression) {
+            throw new InvalidArgumentException('The relation must be a relation name or an array of relations; pass an Expression as the column instead.');
+        }
+
+        return [$relation, $column];
     }
 }

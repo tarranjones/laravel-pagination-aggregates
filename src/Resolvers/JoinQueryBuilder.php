@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace TarranJones\LaravelPaginationAggregates\Resolvers;
 
 use Closure;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Query\Grammars\Grammar;
 
 class JoinQueryBuilder
@@ -18,13 +18,14 @@ class JoinQueryBuilder
      * of a grouped query wrapped in a derived table need not have one.
      *
      * @param  InstructionGroup[]  $groups
-     * @return array{0: Builder, 1: array<string, string|array>}
+     * @param  Builder<*>  $builder
+     * @return array{0: Builder<*>, 1: array<string, string|array{sum: string, count: string}>}
      */
     public function build(array $groups, Builder $builder, Grammar $grammar): array
     {
         $query = clone $builder;
         $query->getQuery()->columns = null;
-        $query->selectRaw('1 AS '.$grammar->wrap('_agg_row'));
+        $query->selectRaw('1 AS _agg_row');
 
         $existsCols = [];
         $joinAliasCounters = [];
@@ -49,6 +50,8 @@ class JoinQueryBuilder
      * $builder is the original unmodified builder (used as the base for the subquery).
      * $query is the accumulating query that receives the CROSS JOIN and SELECT additions.
      *
+     * @param  Builder<*>  $builder
+     * @param  Builder<*>  $query
      * @param  array<string, int>  $joinAliasCounters
      * @param  array<string, mixed>  $existsCols
      */
@@ -60,7 +63,7 @@ class JoinQueryBuilder
         array &$joinAliasCounters,
         array &$existsCols,
     ): void {
-        $jAlias = $this->joinAlias($instructionGroup->table, $joinAliasCounters);
+        $jAlias = $this->joinAlias((string) $instructionGroup->table, $joinAliasCounters);
         $subSelects = [];
 
         foreach ($instructionGroup->instructions as $instruction) {
@@ -95,7 +98,9 @@ class JoinQueryBuilder
         }
 
         // ORDER BY is meaningless inside an aggregate and rejected by PostgreSQL.
-        $subQuery->reorder()->selectRaw(implode(', ', $subSelects));
+        /** @var literal-string $selects aggregate expressions over grammar-wrapped identifiers */
+        $selects = implode(', ', $subSelects);
+        $subQuery->reorder()->selectRaw($selects);
         $query->crossJoinSub($subQuery, $jAlias);
     }
 
@@ -107,6 +112,7 @@ class JoinQueryBuilder
      * compute a global SUM / COUNT instead of an average of per-row averages.
      *
      * @param  array<string, mixed>  $existsCols
+     * @param  Builder<*>  $builder
      */
     private function buildNonHasOneOrManyGroup(
         InstructionGroup $instructionGroup,
@@ -118,8 +124,8 @@ class JoinQueryBuilder
                 $sumCol = '_agg_sum_'.$instruction->alias;
                 $cntCol = '_agg_cnt_'.$instruction->alias;
 
-                $builder->withAggregate($this->aliasedRelation($instructionGroup, $sumCol), $instruction->column, 'sum');
-                $builder->withAggregate($this->aliasedRelation($instructionGroup, $cntCol), $instruction->column, 'count');
+                $builder->withAggregate($this->aliasedRelation($instructionGroup, $sumCol), $instruction->column ?? '*', 'sum');
+                $builder->withAggregate($this->aliasedRelation($instructionGroup, $cntCol), $instruction->column ?? '*', 'count');
 
                 $existsCols[$instruction->alias] = ['sum' => $sumCol, 'count' => $cntCol];
 
@@ -142,11 +148,11 @@ class JoinQueryBuilder
 
             if ($instructionGroup->constraints instanceof Closure) {
                 // Pass the full $relations array so withAggregate receives the closure-keyed relation name.
-                $builder->withAggregate($relations, $instruction->column, $instruction->function);
+                $builder->withAggregate($relations ?? [], $instruction->column ?? '*', $instruction->function);
             } else {
                 // No constraint closure: pass just the relation name string (array_key_first) so
                 // withAggregate does not try to interpret it as a closure-constrained relation.
-                $builder->withAggregate(array_key_first($relations), $instruction->column, $instruction->function);
+                $builder->withAggregate((string) array_key_first($relations ?? []), $instruction->column ?? '*', $instruction->function);
             }
         }
     }
@@ -170,6 +176,7 @@ class JoinQueryBuilder
      *
      * @param  array<string, int>  $joinAliasCounters
      * @param  array<string, mixed>  $existsCols
+     * @param  Builder<*>  $builder
      */
     private function buildHasOneOrManyGroup(
         InstructionGroup $instructionGroup,
@@ -178,7 +185,7 @@ class JoinQueryBuilder
         array &$joinAliasCounters,
         array &$existsCols,
     ): void {
-        $jAlias = $this->joinAlias($instructionGroup->baseName, $joinAliasCounters);
+        $jAlias = $this->joinAlias((string) $instructionGroup->baseName, $joinAliasCounters);
         $fk = $instructionGroup->fk;
         $localKey = $instructionGroup->localKey;
         $subSelects = [$fk];
@@ -218,7 +225,9 @@ class JoinQueryBuilder
             ($instructionGroup->constraints)($subQuery);
         }
 
-        $subQuery->selectRaw(implode(', ', $subSelects))->groupBy($fk);
+        /** @var literal-string $selects aggregate expressions over grammar-wrapped identifiers */
+        $selects = implode(', ', $subSelects);
+        $subQuery->selectRaw($selects)->groupBy($fk);
 
         $builder->leftJoinSub($subQuery, $jAlias, sprintf('%s.%s', $jAlias, $fk), '=', $localKey);
     }

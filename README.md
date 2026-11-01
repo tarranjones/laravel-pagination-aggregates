@@ -171,7 +171,7 @@ The same syntax works for all numeric aggregates — pass the column as the seco
 Each unique constraint becomes its own CROSS JOIN derived table. Aggregates that share the same constraint are batched together into one subquery:
 
 ```sql
-SELECT `orders`.`id`,
+SELECT 1 AS _agg_row,
        `agg_orders`.`pending`,
        `agg_orders_2`.`processing`
 FROM `orders`
@@ -290,7 +290,7 @@ Comment::query()->withAggMax('votes')->withAggMin('votes')->withAggSum('votes')-
 ```
 
 ```sql
-SELECT `comments`.`id`,
+SELECT 1 AS _agg_row,
        `agg_comments`.`max_votes`,
        `agg_comments`.`min_votes`,
        `agg_comments`.`sum_votes`
@@ -312,7 +312,7 @@ Post::query()->withAggMax('comments', 'votes')->withAggMin('comments', 'votes')-
 ```
 
 ```sql
-SELECT `posts`.`id`,
+SELECT 1 AS _agg_row,
        `agg_comments`.`comments_max_votes`,
        `agg_comments`.`comments_min_votes`
 FROM `posts`
@@ -345,7 +345,7 @@ LIMIT 1
 
 - Aggregates reflect the full base query, not just the current page.
 - Values have the same PHP types on every database: `count` → `int`, `exists` → `bool`, `sum` → `int|float`, `avg` → `float|null`. `max`/`min` are returned as the database gives them (they may be dates or strings).
-- Tested on SQLite, MySQL 8.4, MariaDB 11.4 and PostgreSQL 17.
+- Tested on SQLite, MySQL 8.4, MariaDB 11.4 and PostgreSQL 17. SQL Server is not tested and may not work.
 - When the base query returns no rows, relation aggregates return `0` for count/sum and `null` for max/min/avg/exists.
 
 ## Testing
