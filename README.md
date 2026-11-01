@@ -338,7 +338,18 @@ composer check     # lint + test
 
 ## Release
 
-Tagging a release (`v*`) triggers the Packagist update workflow.
+Pushing a `v*` tag (or publishing a GitHub release with a new tag) runs the `release` workflow:
+
+1. the full test matrix,
+2. a GitHub release with the matching `CHANGELOG.md` section as its notes,
+3. **Publish to Packagist**: updates the package, or creates it if it is not on Packagist yet.
+
+The Packagist job needs two repository secrets (*Settings → Secrets and variables → Actions*):
+
+- `PACKAGIST_USERNAME`: your Packagist username.
+- `PACKAGIST_TOKEN`: your Packagist **main** API token (needed to create the package; updates also accept the safe token).
+
+To publish without cutting a release (for example, the first time), run the `release` workflow manually from the *Actions* tab; only the tests and the Packagist job run.
 
 ## Contributing
 

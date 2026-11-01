@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- The release workflow publishes to Packagist in its own job: it updates the package, creates it if it doesn't exist yet, and fails on any other Packagist error (previously an error response still passed). Credentials are sent as a Bearer header instead of in the URL. The workflow can also be run manually to publish without a release.
+
 ## [2.0.0] - 2026-11-01
 
 ### Added
