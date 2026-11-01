@@ -7,6 +7,7 @@ namespace TarranJones\LaravelPaginationAggregates;
 use Closure;
 use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\Cursor;
 use Illuminate\Support\Collection;
 use TarranJones\LaravelPaginationAggregates\Pagination\CursorPaginator;
@@ -31,6 +32,7 @@ class PaginatorFactory
     /**
      * @param  Builder<*>  $builder
      * @param  array<int, string>  $columns
+     * @return LengthAwarePaginator<int, Model>
      */
     public static function paginate(
         Builder $builder,
@@ -69,6 +71,7 @@ class PaginatorFactory
     /**
      * @param  Builder<*>  $builder
      * @param  array<int, string>  $columns
+     * @return Paginator<int, Model>
      */
     public static function simplePaginate(
         Builder $builder,
@@ -85,6 +88,7 @@ class PaginatorFactory
     /**
      * @param  Builder<*>  $builder
      * @param  array<int, string>  $columns
+     * @return CursorPaginator<int, Model>
      */
     public static function cursorPaginate(
         Builder $builder,
@@ -190,8 +194,8 @@ class PaginatorFactory
         }
 
         foreach ($aggregateCoordinator->instructions() as $instruction) {
-            if (self::isPageComputable($instruction) && $instruction->column !== null && $instruction->column !== '*') {
-                $columns[] = (string) $instruction->column;
+            if (self::isPageComputable($instruction) && is_string($instruction->column) && $instruction->column !== '*') {
+                $columns[] = $instruction->column;
             }
         }
 
@@ -214,7 +218,8 @@ class PaginatorFactory
      */
     private static function computeFromPage(AggregateInstruction $aggregateInstruction, Collection $items, int $total): mixed
     {
-        $column = $aggregateInstruction->column;
+        // isPageComputable() guarantees a plain string column.
+        $column = is_string($aggregateInstruction->column) ? $aggregateInstruction->column : null;
 
         $value = match ($aggregateInstruction->function) {
             'count' => $total,

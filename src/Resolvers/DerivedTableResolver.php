@@ -89,9 +89,12 @@ class DerivedTableResolver
             $instructions,
         );
 
+        /** @var literal-string $sql aggregate expressions over grammar-wrapped identifiers */
+        $sql = implode(', ', $selects);
+
         $row = $builder->getQuery()->newQuery()
             ->fromSub($subQuery, self::TABLE_ALIAS)
-            ->selectRaw(implode(', ', $selects))
+            ->selectRaw($sql)
             ->first() ?? (object) [];
 
         $meta = [];

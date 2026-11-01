@@ -643,3 +643,21 @@ it('BelongsToMany withAggExists is false without pivot rows and true once one ex
     expect($before['tags_exists'])->toBeFalse()
         ->and($after['tags_exists'])->toBeTrue();
 });
+
+it('rejects a numeric aggregate without a column', function (Closure $declare): void {
+    expect(fn () => $declare(Comment::query())->paginateWithAggregates(10))
+        ->toThrow(InvalidArgumentException::class, 'A column is required');
+})->with([
+    'no arguments' => [fn (Builder $builder): Builder => $builder->withAggSum()],
+    'constraint array only' => [fn (Builder $builder): Builder => $builder->withAggMax(['as top' => fn (Builder $query): Builder => $query->where('votes', '>', 1)])],
+]);
+
+it('rejects an Expression passed as the relation', function (): void {
+    expect(fn () => Post::query()->withAggSum(DB::raw('comments'), 'votes')->paginateWithAggregates(10))
+        ->toThrow(InvalidArgumentException::class, 'pass an Expression as the column');
+});
+
+it('rejects a relation list containing a non-string entry', function (): void {
+    expect(fn () => Post::query()->withAggCount([fn (Builder $query): Builder => $query])->paginateWithAggregates(10))
+        ->toThrow(InvalidArgumentException::class, 'must be relation names');
+});
