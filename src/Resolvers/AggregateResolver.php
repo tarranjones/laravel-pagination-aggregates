@@ -9,17 +9,11 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOneOrMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Database\Query\Grammars\Grammar;
 use TarranJones\LaravelPaginationAggregates\AggregateInstruction;
 use TarranJones\LaravelPaginationAggregates\AliasResolver;
 
 class AggregateResolver
 {
-    /**
-     * Alias for the number of base-query rows seen by the summarising query.
-     */
-    private const string ROW_COUNT_ALIAS = '_agg_row_count';
-
     /**
      * @param  AggregateInstruction[]  $instructions
      * @param  Builder<*>  $builder
@@ -98,75 +92,9 @@ class AggregateResolver
 
         [$query, $existsCols] = (new JoinQueryBuilder)->build($groups, $builder, $grammar);
 
-        $row = $this->summarise($query, $instructions, $existsCols, $grammar);
-
-        if ((int) ($row->{self::ROW_COUNT_ALIAS} ?? 0) === 0) {
-            $meta = [];
-            foreach ($instructions as $instruction) {
-                $meta[$instruction->alias] = match ($instruction->function) {
-                    'count', 'sum' => 0,
-                    default => null,
-                };
-            }
-
-            return $meta;
-        }
+        $row = $query->first() ?? (object) [];
 
         return $this->aggregateResults($row, $instructions, $existsCols);
-    }
-
-    /**
-     * Collapse the per-parent-row join query into a single row inside the database.
-     *
-     * The join query yields one row per base-query row; wrapping it in a derived table and
-     * aggregating there means only one row ever reaches PHP, however large the result set.
-     * Relation values are rolled up (SUM/MAX/MIN) across parents; base values are identical
-     * on every row, so MAX() simply picks that value.
-     *
-     * @param  AggregateInstruction[]  $instructions
-     * @param  array<string, string|array{sum: string, count: string}>  $existsCols
-     * @param  Builder<*>  $query
-     */
-    private function summarise(Builder $query, array $instructions, array $existsCols, Grammar $grammar): object
-    {
-        $query->reorder();
-
-        $selects = ['COUNT(*) AS '.$grammar->wrap(self::ROW_COUNT_ALIAS)];
-
-        foreach ($instructions as $instruction) {
-            $isBase = $instruction->relations === null;
-            $colInfo = $existsCols[$instruction->alias] ?? null;
-
-            if ($colInfo === null) {
-                $fn = match (true) {
-                    $isBase => 'MAX',
-                    in_array($instruction->function, ['count', 'sum'], true) => 'SUM',
-                    $instruction->function === 'min' => 'MIN',
-                    default => 'MAX',
-                };
-
-                $selects[] = $this->outerAggregate($fn, $instruction->alias, $grammar);
-            } elseif (is_string($colInfo)) {
-                $selects[] = $this->outerAggregate('MAX', $colInfo, $grammar);
-            } else {
-                $fn = $isBase ? 'MAX' : 'SUM';
-                $selects[] = $this->outerAggregate($fn, $colInfo['sum'], $grammar);
-                $selects[] = $this->outerAggregate($fn, $colInfo['count'], $grammar);
-            }
-        }
-
-        /** @var literal-string $sql aggregate expressions over grammar-wrapped identifiers */
-        $sql = implode(', ', $selects);
-
-        return $query->getQuery()->newQuery()
-            ->fromSub($query, 'agg_rows')
-            ->selectRaw($sql)
-            ->first() ?? (object) [];
-    }
-
-    private function outerAggregate(string $function, string $column, Grammar $grammar): string
-    {
-        return sprintf('%s(%s) AS %s', $function, $grammar->wrap('agg_rows.'.$column), $grammar->wrap($column));
     }
 
     /**
@@ -232,8 +160,6 @@ class AggregateResolver
                         'baseName' => null,
                         'constraints' => $instruction->constraint,
                         'table' => $builder->getModel()->getTable(),
-                        'fk' => null,
-                        'localKey' => null,
                         'isHasOneOrMany' => true,
                         'relation' => null,
                     ],
@@ -259,8 +185,6 @@ class AggregateResolver
                     'baseName' => $baseName,
                     'constraints' => $constraints,
                     'table' => $relation->getRelated()->getTable(),
-                    'fk' => $isHasOneOrMany ? $relation->getForeignKeyName() : null,
-                    'localKey' => $isHasOneOrMany ? $builder->getModel()->getQualifiedKeyName() : null,
                     'isHasOneOrMany' => $isHasOneOrMany,
                     'relation' => $relation,
                 ],
@@ -288,8 +212,6 @@ class AggregateResolver
             baseName: $meta['baseName'],
             constraints: $meta['constraints'],
             table: $meta['table'],
-            fk: $meta['fk'],
-            localKey: $meta['localKey'],
             instructions: $item['instructions'],
             isHasOneOrMany: $meta['isHasOneOrMany'],
             relation: $meta['relation'],

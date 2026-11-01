@@ -79,7 +79,7 @@ it('single base withAggSum is batched with the paginator total into one CROSS JO
     // Only 2 queries: CROSS JOIN (SUM + injected total) + data page — no separate COUNT(*)
     expect($queries)->toHaveCount(2)
         ->and($queries[0])->toBe(
-            'select COUNT(*) AS "_agg_row_count", MAX("agg_rows"."sum_votes") AS "sum_votes", MAX("agg_rows"."__paginator_total") AS "__paginator_total" from (select 1 AS _agg_row, "agg_comments"."sum_votes", "agg_comments"."__paginator_total" from "comments" cross join (select SUM("votes") AS "sum_votes", COUNT(*) AS "__paginator_total" from "comments") as "agg_comments") as "agg_rows" limit 1'
+            'select SUM("votes") AS "sum_votes", COUNT(*) AS "__paginator_total" from "comments" limit 1'
         );
 });
 
@@ -93,7 +93,7 @@ it('multiple base aggregates and the paginator total are batched into a single C
     // 2 queries: CROSS JOIN (MAX + MIN + injected total) + data page
     expect($queries)->toHaveCount(2)
         ->and($queries[0])->toBe(
-            'select COUNT(*) AS "_agg_row_count", MAX("agg_rows"."max_votes") AS "max_votes", MAX("agg_rows"."min_votes") AS "min_votes", MAX("agg_rows"."__paginator_total") AS "__paginator_total" from (select 1 AS _agg_row, "agg_comments"."max_votes", "agg_comments"."min_votes", "agg_comments"."__paginator_total" from "comments" cross join (select MAX("votes") AS "max_votes", MIN("votes") AS "min_votes", COUNT(*) AS "__paginator_total" from "comments") as "agg_comments") as "agg_rows" limit 1'
+            'select MAX("votes") AS "max_votes", MIN("votes") AS "min_votes", COUNT(*) AS "__paginator_total" from "comments" limit 1'
         );
 });
 
@@ -105,7 +105,7 @@ it('withAggCount paired with withAggExists batches both into one CROSS JOIN deri
     // withAggCount reused as total — no separate COUNT(*) paginator query
     expect($queries)->toHaveCount(2)
         ->and($queries[0])->toBe(
-            'select COUNT(*) AS "_agg_row_count", MAX("agg_rows"."count") AS "count", MAX("agg_rows"."_agg_ecnt_exists") AS "_agg_ecnt_exists" from (select 1 AS _agg_row, "agg_posts"."count", "agg_posts"."_agg_ecnt_exists" from "posts" cross join (select COUNT(*) AS "count", COUNT(*) AS "_agg_ecnt_exists" from "posts") as "agg_posts") as "agg_rows" limit 1'
+            'select COUNT(*) AS "count", COUNT(*) AS "_agg_ecnt_exists" from "posts" limit 1'
         );
 });
 
@@ -120,7 +120,7 @@ it('constrained base aggregates with different constraints produce separate CROS
     );
 
     expect($queries[0])->toBe(
-        'select COUNT(*) AS "_agg_row_count", MAX("agg_rows"."a") AS "a", MAX("agg_rows"."b") AS "b" from (select 1 AS _agg_row, "agg_posts"."a", "agg_posts_2"."b" from "posts" cross join (select COUNT(*) AS "a" from "posts" where "id" = 1) as "agg_posts" cross join (select COUNT(*) AS "b" from "posts" where "id" = 2) as "agg_posts_2") as "agg_rows" limit 1'
+        'select * from (select COUNT(*) AS "a" from "posts" where "id" = 1) as "agg_posts" cross join (select COUNT(*) AS "b" from "posts" where "id" = 2) as "agg_posts_2" limit 1'
     );
 });
 
@@ -134,7 +134,7 @@ it('constrained base aggregates sharing the same constraint are batched into one
     );
 
     expect($queries[0])->toBe(
-        'select COUNT(*) AS "_agg_row_count", MAX("agg_rows"."a") AS "a", MAX("agg_rows"."b") AS "b" from (select 1 AS _agg_row, "agg_posts"."a", "agg_posts"."b" from "posts" cross join (select COUNT(*) AS "a", MAX("id") AS "b" from "posts" where "id" > 0) as "agg_posts") as "agg_rows" limit 1'
+        'select COUNT(*) AS "a", MAX("id") AS "b" from "posts" where "id" > 0 limit 1'
     );
 });
 
@@ -146,7 +146,7 @@ it('relation aggregates for the same relation are batched into one LEFT JOIN der
     );
 
     expect($queries[0])->toBe(
-        'select COUNT(*) AS "_agg_row_count", SUM("agg_rows"."comments_count") AS "comments_count", MAX("agg_rows"."comments_max_votes") AS "comments_max_votes" from (select 1 AS _agg_row, "agg_comments"."comments_count", "agg_comments"."comments_max_votes" from "posts" left join (select post_id, COUNT(*) AS "comments_count", MAX("votes") AS "comments_max_votes" from "comments" group by "post_id") as "agg_comments" on "agg_comments"."post_id" = "posts"."id") as "agg_rows" limit 1'
+        'select COUNT(*) AS "comments_count", MAX("votes") AS "comments_max_votes" from "comments" where "comments"."post_id" in (select "posts"."id" from "posts") limit 1'
     );
 });
 
@@ -158,7 +158,7 @@ it('constrained relation aggregate applies WHERE inside the LEFT JOIN derived ta
     );
 
     expect($queries[0])->toBe(
-        'select COUNT(*) AS "_agg_row_count", SUM("agg_rows"."high_votes") AS "high_votes" from (select 1 AS _agg_row, "agg_comments"."high_votes" from "posts" left join (select post_id, COUNT(*) AS "high_votes" from "comments" where "votes" > 3 group by "post_id") as "agg_comments" on "agg_comments"."post_id" = "posts"."id") as "agg_rows" limit 1'
+        'select COUNT(*) AS "high_votes" from "comments" where "votes" > 3 and "comments"."post_id" in (select "posts"."id" from "posts") limit 1'
     );
 });
 

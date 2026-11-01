@@ -18,8 +18,6 @@ readonly class InstructionGroup
         public ?string $baseName,
         public ?Closure $constraints,
         public ?string $table,
-        public ?string $fk,
-        public ?string $localKey,
         public array $instructions,
         public bool $isHasOneOrMany,
         public mixed $relation,
