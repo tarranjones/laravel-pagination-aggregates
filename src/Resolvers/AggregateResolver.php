@@ -29,12 +29,63 @@ class AggregateResolver
             return [];
         }
 
+        if (DerivedTableResolver::requiresDerivedTable($builder)) {
+            return $this->resolveForDerivedQuery($instructions, $builder);
+        }
+
         // Optimization: if only one instruction and it's a base query aggregate,
         // use scalar query instead of derived table
         if (count($instructions) === 1 && $instructions[0]->relations === null) {
             return $this->resolveSingleInstruction($instructions[0], $builder);
         }
 
+        return $this->resolveJoined($instructions, $builder);
+    }
+
+    /**
+     * Grouped / HAVING / DISTINCT / UNION queries: base aggregates are computed over the query's
+     * result rows via a derived table; relation aggregates still use the join query.
+     *
+     * @param  AggregateInstruction[]  $instructions
+     * @return array<string, mixed>
+     */
+    private function resolveForDerivedQuery(array $instructions, Builder $builder): array
+    {
+        $baseInstructions = array_values(array_filter($instructions, fn (AggregateInstruction $instruction): bool => $instruction->relations === null));
+        $relationInstructions = array_values(array_filter($instructions, fn (AggregateInstruction $instruction): bool => $instruction->relations !== null));
+
+        $resolved = [
+            ...($baseInstructions === [] ? [] : (new DerivedTableResolver)->resolve($baseInstructions, $builder)),
+            ...($relationInstructions === [] ? [] : $this->resolveJoined($relationInstructions, $this->wrapAsModelTable($builder))),
+        ];
+
+        // Preserve declaration order.
+        $meta = [];
+        foreach ($instructions as $instruction) {
+            $meta[$instruction->alias] = $resolved[$instruction->alias] ?? null;
+        }
+
+        return $meta;
+    }
+
+    /**
+     * Wrap a grouped / DISTINCT / UNION query in a derived table aliased as the model's own table,
+     * so relation joins and correlated subqueries (which reference `table.column`) resolve against
+     * its result rows. The rows must expose the columns the relation uses (e.g. the foreign key).
+     */
+    private function wrapAsModelTable(Builder $builder): Builder
+    {
+        $model = $builder->getModel();
+
+        return $model->newQueryWithoutScopes()->fromSub((clone $builder)->reorder(), $model->getTable());
+    }
+
+    /**
+     * @param  AggregateInstruction[]  $instructions
+     * @return array<string, mixed>
+     */
+    private function resolveJoined(array $instructions, Builder $builder): array
+    {
         $grammar = $builder->getQuery()->getGrammar();
         $groups = $this->groupInstructions($instructions, $builder);
 
@@ -160,7 +211,7 @@ class AggregateResolver
 
         foreach ($instructions as $instruction) {
             if ($instruction->relations === null) {
-                $key = 'base:'.$this->constraintKey($instruction->constraint, clone $builder);
+                $key = 'base:'.self::constraintKey($instruction->constraint, clone $builder);
 
                 $baseAccum[$key] ??= [
                     'meta' => [
@@ -232,7 +283,10 @@ class AggregateResolver
         );
     }
 
-    private function constraintKey(?Closure $constraint, Builder $builder): string
+    /**
+     * Identify a constraint closure by the SQL it produces, so identical constraints share a query.
+     */
+    public static function constraintKey(?Closure $constraint, Builder $builder): string
     {
         if (! $constraint instanceof Closure) {
             return 'none';

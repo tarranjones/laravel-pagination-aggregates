@@ -32,6 +32,8 @@
 - `items()`, `total()`, `count()`, iteration, `through()` and `JsonResource::collection()` returned empty data until the paginator was serialized.
 - Base aggregates failed on PostgreSQL when the query had an `orderBy()` (the `ORDER BY` leaked into the aggregate subquery).
 - Wrong paginator `total` for `groupBy()` / `having()` / `distinct()` / union base queries.
+- Base aggregates on `groupBy()` / `having()` / `distinct()` / union queries returned a value for one group (or counted underlying rows). They are now computed over the query's result rows via a derived table.
+- Relation aggregates on grouped queries failed on MySQL and PostgreSQL (`GROUP BY` error). They are now computed per result row and rolled up on every driver.
 - `withAvg()` on `BelongsTo`, `HasManyThrough` and other non-`HasOneOrMany`/`BelongsToMany` relations threw `BadMethodCallException`.
 
 ### Removed

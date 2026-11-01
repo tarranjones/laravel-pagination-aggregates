@@ -14,13 +14,17 @@ class JoinQueryBuilder
     /**
      * Build the derived-table JOIN query.
      *
+     * The query selects one marker column per base row. It used to select the model key, but rows
+     * of a grouped query wrapped in a derived table need not have one.
+     *
      * @param  InstructionGroup[]  $groups
      * @return array{0: Builder, 1: array<string, string|array>}
      */
     public function build(array $groups, Builder $builder, Grammar $grammar): array
     {
         $query = clone $builder;
-        $query->select($query->getModel()->getQualifiedKeyName());
+        $query->getQuery()->columns = null;
+        $query->selectRaw('1 AS '.$grammar->wrap('_agg_row'));
 
         $existsCols = [];
         $joinAliasCounters = [];
