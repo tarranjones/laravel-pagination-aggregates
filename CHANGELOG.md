@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.0.0] - 2026-11-01
 
 ### Added
 - Laravel 13 support (`illuminate/*` `^12.0 || ^13.0`).
