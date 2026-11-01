@@ -168,14 +168,10 @@ The same syntax works for all numeric aggregates — pass the column as the seco
 ->withAggMax(['as todays_max' => fn (Builder $q) => $q->whereDate('created_at', today())], 'total')
 ```
 
-Each unique constraint becomes its own CROSS JOIN derived table. Aggregates that share the same constraint are batched together into one subquery:
+Each unique constraint becomes its own single-row subquery; aggregates that share a constraint are batched into the same one. All subqueries are combined into one query:
 
 ```sql
-SELECT 1 AS _agg_row,
-       `agg_orders`.`pending`,
-       `agg_orders_2`.`processing`
-FROM `orders`
-CROSS JOIN (SELECT COUNT(*) AS `pending` FROM `orders` WHERE `status` = 'pending') AS `agg_orders`
+SELECT * FROM (SELECT COUNT(*) AS `pending` FROM `orders` WHERE `status` = 'pending') AS `agg_orders`
 CROSS JOIN (SELECT COUNT(*) AS `processing` FROM `orders` WHERE `status` = 'processing') AS `agg_orders_2`
 -- etc.
 ```
@@ -269,84 +265,67 @@ Order::query()
 
 ## SQL reference
 
-### Single base aggregate — scalar query (no JOIN)
+All aggregates are computed in **one query that returns one row**: every group of aggregates becomes a single-row subquery, and the subqueries are combined with `CROSS JOIN`. (A query with a single group is run directly.) Only the current page of models is ever loaded into PHP.
 
-A single base aggregate with no constraint is resolved with a direct scalar query:
+### Single base aggregate — scalar query
 
 ```php
 Comment::query()->withAggSum('votes')->paginateWithAggregates(20);
 ```
 
 ```sql
-SELECT SUM(`votes`) FROM `comments`
+SELECT SUM(`votes`) AS `sum_votes`, COUNT(*) AS `__paginator_total` FROM `comments`
 ```
 
-### Multiple base aggregates — CROSS JOIN derived table
+The paginator `total` is computed in the same query (or taken from a base `withAggCount()`), so Laravel's separate `COUNT(*)` is skipped.
 
-When multiple base aggregates share the same constraint (or have none), they are batched into one `CROSS JOIN`:
+### Base aggregates with different constraints
 
 ```php
-Comment::query()->withAggMax('votes')->withAggMin('votes')->withAggSum('votes')->paginateWithAggregates(20);
+Order::query()
+    ->withAggCount([
+        'as pending' => fn (Builder $q) => $q->where('status', 'pending'),
+        'as shipped' => fn (Builder $q) => $q->where('status', 'shipped'),
+    ])
+    ->paginateWithAggregates(25);
 ```
 
 ```sql
-SELECT 1 AS _agg_row,
-       `agg_comments`.`max_votes`,
-       `agg_comments`.`min_votes`,
-       `agg_comments`.`sum_votes`
+SELECT * FROM (SELECT COUNT(*) AS `pending` FROM `orders` WHERE `status` = 'pending') AS `agg_orders`
+CROSS JOIN (SELECT COUNT(*) AS `shipped` FROM `orders` WHERE `status` = 'shipped') AS `agg_orders_2`
+```
+
+### HasOne / HasMany / MorphOne / MorphMany
+
+Related rows are aggregated directly, restricted to the parents in the base query (and to the parent's morph type), so an index on the foreign key is used:
+
+```php
+Post::query()->where('published', true)->withAggCount('comments')->withAggMax('comments', 'votes')->paginateWithAggregates(15);
+```
+
+```sql
+SELECT COUNT(*) AS `comments_count`, MAX(`votes`) AS `comments_max_votes`
 FROM `comments`
-CROSS JOIN (
-  SELECT MAX(`votes`) AS `max_votes`,
-         MIN(`votes`) AS `min_votes`,
-         SUM(`votes`) AS `sum_votes`
-  FROM `comments`
-) AS `agg_comments`
-```
-
-### HasOneOrMany relation — LEFT JOIN derived table
-
-Multiple aggregates for the same relation and constraint set are batched into a single derived table:
-
-```php
-Post::query()->withAggMax('comments', 'votes')->withAggMin('comments', 'votes')->paginateWithAggregates(15);
-```
-
-```sql
-SELECT 1 AS _agg_row,
-       `agg_comments`.`comments_max_votes`,
-       `agg_comments`.`comments_min_votes`
-FROM `posts`
-LEFT JOIN (
-  SELECT `post_id`,
-         MAX(`votes`) AS `comments_max_votes`,
-         MIN(`votes`) AS `comments_min_votes`
-  FROM `comments`
-  GROUP BY `post_id`
-) AS `agg_comments` ON `agg_comments`.`post_id` = `posts`.`id`
+WHERE `comments`.`post_id` IN (SELECT `posts`.`id` FROM `posts` WHERE `published` = 1)
 ```
 
 ### BelongsTo, BelongsToMany and other relation types
 
-Relations that are not `HasOne` / `HasMany` fall back to correlated subqueries via Laravel's `withAggregate`. Averages are computed from correlated `SUM` and `COUNT` columns, so the result is a global `SUM / COUNT` across the full result set rather than an average of averages.
-
-### Summarising query
-
-The join query above yields one row per base-query row. It is always wrapped in a derived table and collapsed to a single row in the database, so the result set is never transferred to PHP:
+Other relations use Laravel's correlated `withAggregate()` subqueries — one value per base row — rolled up with `SUM` / `MIN` / `MAX`:
 
 ```sql
-SELECT COUNT(*) AS `_agg_row_count`,
-       SUM(`agg_rows`.`comments_count`) AS `comments_count`,
-       MAX(`agg_rows`.`comments_max_votes`) AS `comments_max_votes`
-FROM (/* join query */) AS `agg_rows`
-LIMIT 1
+SELECT SUM(`agg_rows`.`tags_count`) AS `tags_count`
+FROM (SELECT 1 AS _agg_row, (SELECT COUNT(*) FROM `tags` INNER JOIN `post_tag` ... WHERE `posts`.`id` = `post_tag`.`post_id`) AS `tags_count` FROM `posts`) AS `agg_rows`
 ```
+
+Averages are always a global `SUM / COUNT` across the full result set, never an average of averages.
 
 ## Notes
 
 - Aggregates reflect the full base query, not just the current page.
 - Values have the same PHP types on every database: `count` → `int`, `exists` → `bool`, `sum` → `int|float`, `avg` → `float|null`. `max`/`min` are returned as the database gives them (they may be dates or strings).
 - Tested on SQLite, MySQL 8.4, MariaDB 11.4 and PostgreSQL 17. SQL Server is not tested and may not work.
-- When the base query returns no rows, relation aggregates return `0` for count/sum and `null` for max/min/avg/exists.
+- When the base query returns no rows, aggregates return `0` for count/sum, `false` for exists, and `null` for max/min/avg.
 
 ## Testing
 

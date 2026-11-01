@@ -7,89 +7,97 @@ namespace TarranJones\LaravelPaginationAggregates\Resolvers;
 use Closure;
 use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasOneOrMany;
+use Illuminate\Database\Eloquent\Relations\MorphOneOrMany;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Query\Grammars\Grammar;
+use LogicException;
 
+/**
+ * Builds one query that returns every aggregate in a single row.
+ *
+ * Each instruction group becomes a derived table that itself returns exactly one row, and the
+ * derived tables are combined with CROSS JOIN:
+ *
+ * - base groups:          SELECT COUNT(*), SUM(col) ... FROM <base query + constraint>
+ * - HasOne / HasMany /
+ *   MorphOne / MorphMany: SELECT COUNT(*), SUM(col) ... FROM related
+ *                         WHERE fk IN (SELECT key FROM <base query>) [AND morph type = ...]
+ * - other relations:      correlated withAggregate() subqueries per base row, rolled up with
+ *                         SUM / MIN / MAX over those rows.
+ *
+ * Only the base groups and the correlated rollup scan the base query; HasOne/HasMany aggregates
+ * read only the related rows of matching parents, so indexes on the foreign key are used.
+ */
 class JoinQueryBuilder
 {
+    private const string PER_ROW_ALIAS = 'agg_rows';
+
     /**
-     * Build the derived-table JOIN query.
-     *
-     * The query selects one marker column per base row. It used to select the model key, but rows
-     * of a grouped query wrapped in a derived table need not have one.
-     *
      * @param  InstructionGroup[]  $groups
      * @param  Builder<*>  $builder
-     * @return array{0: Builder<*>, 1: array<string, string|array{sum: string, count: string}>}
+     * @return array{0: QueryBuilder, 1: array<string, string|array{sum: string, count: string}>}
      */
     public function build(array $groups, Builder $builder, Grammar $grammar): array
     {
-        $query = clone $builder;
-        $query->getQuery()->columns = null;
-        $query->selectRaw('1 AS _agg_row');
-
+        /** @var array<string, string|array{sum: string, count: string}> $existsCols */
         $existsCols = [];
         $joinAliasCounters = [];
+        /** @var array<string, Builder<*>> $parts */
+        $parts = [];
+        /** @var InstructionGroup[] $perRowGroups */
+        $perRowGroups = [];
 
         foreach ($groups as $group) {
             if ($group->type === 'base') {
-                $this->buildBaseGroup($group, $builder, $query, $grammar, $joinAliasCounters, $existsCols);
-            } elseif (! $group->isHasOneOrMany) {
-                $this->buildNonHasOneOrManyGroup($group, $query, $existsCols);
+                $parts[$this->joinAlias((string) $group->table, $joinAliasCounters)] = $this->baseGroupQuery($group, $builder, $grammar, $existsCols);
+            } elseif ($group->isHasOneOrMany) {
+                $parts[$this->joinAlias((string) $group->baseName, $joinAliasCounters)] = $this->hasOneOrManyGroupQuery($group, $builder, $grammar, $existsCols);
             } else {
-                $this->buildHasOneOrManyGroup($group, $query, $grammar, $joinAliasCounters, $existsCols);
+                $perRowGroups[] = $group;
             }
         }
 
-        return [$query, $existsCols];
+        if ($perRowGroups !== []) {
+            $parts[self::PER_ROW_ALIAS] = $this->perRowRollupQuery($perRowGroups, $builder, $grammar, $existsCols);
+        }
+
+        return [$this->combine($parts), $existsCols];
     }
 
     /**
-     * Base query aggregates: CROSS JOIN with a subquery that computes aggregates
-     * over the filtered dataset, adding those values to every row.
-     *
-     * $builder is the original unmodified builder (used as the base for the subquery).
-     * $query is the accumulating query that receives the CROSS JOIN and SELECT additions.
-     *
-     * @param  Builder<*>  $builder
-     * @param  Builder<*>  $query
-     * @param  array<string, int>  $joinAliasCounters
-     * @param  array<string, mixed>  $existsCols
+     * @param  array<string, Builder<*>>  $parts
      */
-    private function buildBaseGroup(
-        InstructionGroup $instructionGroup,
-        Builder $builder,
-        Builder $query,
-        Grammar $grammar,
-        array &$joinAliasCounters,
-        array &$existsCols,
-    ): void {
-        $jAlias = $this->joinAlias((string) $instructionGroup->table, $joinAliasCounters);
-        $subSelects = [];
-
-        foreach ($instructionGroup->instructions as $instruction) {
-            $alias = $instruction->alias;
-            $wrappedCol = $this->wrapColumn($instruction->column, $grammar);
-
-            if ($instruction->function === 'exists') {
-                $cntCol = '_agg_ecnt_'.$alias;
-                $subSelects[] = sprintf('COUNT(*) AS %s', $grammar->wrap($cntCol));
-                $existsCols[$alias] = $cntCol;
-                $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
-            } elseif ($instruction->function === 'avg') {
-                $sumCol = '_agg_sum_'.$alias;
-                $cntCol = '_agg_cnt_'.$alias;
-                $subSelects[] = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
-                $subSelects[] = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
-                $existsCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
-                $query->addSelect(sprintf('%s.%s', $jAlias, $sumCol));
-                $query->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
-            } else {
-                $fn = strtoupper($instruction->function);
-                $subSelects[] = sprintf('%s(%s) AS %s', $fn, $wrappedCol, $grammar->wrap($alias));
-                $query->addSelect(sprintf('%s.%s', $jAlias, $alias));
-            }
+    private function combine(array $parts): QueryBuilder
+    {
+        if (count($parts) === 1) {
+            return reset($parts)->toBase();
         }
 
+        $query = null;
+
+        foreach ($parts as $alias => $part) {
+            $query = $query instanceof QueryBuilder
+                ? $query->crossJoinSub($part, $alias)
+                : $part->toBase()->newQuery()->fromSub($part, $alias);
+        }
+
+        if (! $query instanceof QueryBuilder) {
+            throw new LogicException('No aggregate groups to combine.');
+        }
+
+        return $query->select('*');
+    }
+
+    /**
+     * Base aggregates: one row computed over the base query (plus the group's constraint).
+     *
+     * @param  Builder<*>  $builder
+     * @param  array<string, string|array{sum: string, count: string}>  $existsCols
+     * @return Builder<*>
+     */
+    private function baseGroupQuery(InstructionGroup $instructionGroup, Builder $builder, Grammar $grammar, array &$existsCols): Builder
+    {
         $subQuery = clone $builder;
         $subQuery->getQuery()->columns = null;
 
@@ -98,10 +106,131 @@ class JoinQueryBuilder
         }
 
         // ORDER BY is meaningless inside an aggregate and rejected by PostgreSQL.
-        /** @var literal-string $selects aggregate expressions over grammar-wrapped identifiers */
-        $selects = implode(', ', $subSelects);
-        $subQuery->reorder()->selectRaw($selects);
-        $query->crossJoinSub($subQuery, $jAlias);
+        return $subQuery->reorder()->selectRaw($this->aggregateSelects($instructionGroup, $grammar, $existsCols));
+    }
+
+    /**
+     * HasOne / HasMany / MorphOne / MorphMany: aggregate the related rows whose foreign key is
+     * one of the base query's keys. Equivalent to rolling up per-parent aggregates, because each
+     * related row belongs to exactly one parent.
+     *
+     * @param  Builder<*>  $builder
+     * @param  array<string, string|array{sum: string, count: string}>  $existsCols
+     * @return Builder<*>
+     */
+    private function hasOneOrManyGroupQuery(InstructionGroup $instructionGroup, Builder $builder, Grammar $grammar, array &$existsCols): Builder
+    {
+        $relation = $instructionGroup->relation;
+
+        if (! $relation instanceof HasOneOrMany) {
+            throw new LogicException('Expected a HasOne / HasMany relation.');
+        }
+
+        $parentKeys = (clone $builder)->reorder();
+        $parentKeys->getQuery()->columns = null;
+        $parentKeys->select($relation->getQualifiedParentKeyName());
+
+        $subQuery = $relation->getRelated()->newQuery();
+
+        if ($relation instanceof MorphOneOrMany) {
+            $subQuery->where($relation->getQualifiedMorphType(), $relation->getMorphClass());
+        }
+
+        if ($instructionGroup->constraints instanceof Closure) {
+            ($instructionGroup->constraints)($subQuery);
+        }
+
+        return $subQuery
+            ->whereIn($relation->getQualifiedForeignKeyName(), $parentKeys)
+            ->selectRaw($this->aggregateSelects($instructionGroup, $grammar, $existsCols));
+    }
+
+    /**
+     * Other relations: correlated withAggregate() subqueries give one value per base row, which
+     * are then rolled up into a single row.
+     *
+     * @param  InstructionGroup[]  $groups
+     * @param  Builder<*>  $builder
+     * @param  array<string, string|array{sum: string, count: string}>  $existsCols
+     * @return Builder<*>
+     */
+    private function perRowRollupQuery(array $groups, Builder $builder, Grammar $grammar, array &$existsCols): Builder
+    {
+        $perRow = (clone $builder)->reorder();
+        $perRow->getQuery()->columns = null;
+        $perRow->selectRaw('1 AS _agg_row');
+
+        $selects = [];
+
+        foreach ($groups as $group) {
+            $this->buildNonHasOneOrManyGroup($group, $perRow, $existsCols);
+
+            foreach ($group->instructions as $instruction) {
+                $colInfo = $existsCols[$instruction->alias] ?? null;
+
+                if ($colInfo === null) {
+                    $fn = match ($instruction->function) {
+                        'min' => 'MIN',
+                        'max' => 'MAX',
+                        default => 'SUM',
+                    };
+                    $selects[] = $this->rollup($fn, $instruction->alias, $grammar);
+                } elseif (is_string($colInfo)) {
+                    $selects[] = $this->rollup('SUM', $colInfo, $grammar);
+                } else {
+                    $selects[] = $this->rollup('SUM', $colInfo['sum'], $grammar);
+                    $selects[] = $this->rollup('SUM', $colInfo['count'], $grammar);
+                }
+            }
+        }
+
+        /** @var literal-string $sql aggregate expressions over grammar-wrapped identifiers */
+        $sql = implode(', ', $selects);
+
+        return $builder->getModel()->newQueryWithoutScopes()
+            ->fromSub($perRow, self::PER_ROW_ALIAS)
+            ->selectRaw($sql);
+    }
+
+    private function rollup(string $function, string $column, Grammar $grammar): string
+    {
+        return sprintf('%s(%s) AS %s', $function, $grammar->wrap(self::PER_ROW_ALIAS.'.'.$column), $grammar->wrap($column));
+    }
+
+    /**
+     * Aggregate expressions for a single-row group. AVG is split into SUM and COUNT so averages
+     * are always a global SUM / COUNT; EXISTS is a COUNT tested for > 0.
+     *
+     * @param  array<string, string|array{sum: string, count: string}>  $existsCols
+     * @return literal-string
+     */
+    private function aggregateSelects(InstructionGroup $instructionGroup, Grammar $grammar, array &$existsCols): string
+    {
+        $selects = [];
+
+        foreach ($instructionGroup->instructions as $instruction) {
+            $alias = $instruction->alias;
+            $wrappedCol = $this->wrapColumn($instruction->column, $grammar);
+
+            if ($instruction->function === 'exists') {
+                $cntCol = '_agg_ecnt_'.$alias;
+                $selects[] = sprintf('COUNT(*) AS %s', $grammar->wrap($cntCol));
+                $existsCols[$alias] = $cntCol;
+            } elseif ($instruction->function === 'avg') {
+                $sumCol = '_agg_sum_'.$alias;
+                $cntCol = '_agg_cnt_'.$alias;
+                $selects[] = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
+                $selects[] = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
+                $existsCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
+            } else {
+                $selects[] = sprintf('%s(%s) AS %s', strtoupper($instruction->function), $wrappedCol, $grammar->wrap($alias));
+            }
+        }
+
+        /** @var literal-string $sql aggregate expressions over grammar-wrapped identifiers */
+        $sql = implode(', ', $selects);
+
+        return $sql;
     }
 
     /**
@@ -111,7 +240,7 @@ class JoinQueryBuilder
      * AVG is split into correlated SUM and COUNT columns so the summarising query can
      * compute a global SUM / COUNT instead of an average of per-row averages.
      *
-     * @param  array<string, mixed>  $existsCols
+     * @param  array<string, string|array{sum: string, count: string}>  $existsCols
      * @param  Builder<*>  $builder
      */
     private function buildNonHasOneOrManyGroup(
@@ -169,67 +298,6 @@ class JoinQueryBuilder
         return $instructionGroup->constraints instanceof Closure
             ? [$name => $instructionGroup->constraints]
             : $name;
-    }
-
-    /**
-     * HasOneOrMany relations: GROUP BY subquery pre-aggregated by FK, then LEFT JOIN.
-     *
-     * @param  array<string, int>  $joinAliasCounters
-     * @param  array<string, mixed>  $existsCols
-     * @param  Builder<*>  $builder
-     */
-    private function buildHasOneOrManyGroup(
-        InstructionGroup $instructionGroup,
-        Builder $builder,
-        Grammar $grammar,
-        array &$joinAliasCounters,
-        array &$existsCols,
-    ): void {
-        $jAlias = $this->joinAlias((string) $instructionGroup->baseName, $joinAliasCounters);
-        $fk = $instructionGroup->fk;
-        $localKey = $instructionGroup->localKey;
-        $subSelects = [$fk];
-        $avgCols = [];
-
-        foreach ($instructionGroup->instructions as $instruction) {
-            $alias = $instruction->alias;
-            $wrappedCol = $this->wrapColumn($instruction->column, $grammar);
-
-            if ($instruction->function === 'exists') {
-                $cntCol = '_agg_ecnt_'.$alias;
-                $subSelects[] = sprintf('COUNT(*) AS %s', $grammar->wrap($cntCol));
-                $existsCols[$alias] = $cntCol;
-                $builder->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
-            } elseif ($instruction->function === 'avg') {
-                $sumCol = '_agg_sum_'.$alias;
-                $cntCol = '_agg_cnt_'.$alias;
-                $subSelects[] = sprintf('SUM(%s) AS %s', $wrappedCol, $grammar->wrap($sumCol));
-                $subSelects[] = sprintf('COUNT(%s) AS %s', $wrappedCol, $grammar->wrap($cntCol));
-                $avgCols[$alias] = ['sum' => $sumCol, 'count' => $cntCol];
-                $builder->addSelect(sprintf('%s.%s', $jAlias, $sumCol));
-                $builder->addSelect(sprintf('%s.%s', $jAlias, $cntCol));
-            } else {
-                $fn = strtoupper($instruction->function);
-                $subSelects[] = sprintf('%s(%s) AS %s', $fn, $wrappedCol, $grammar->wrap($alias));
-                $builder->addSelect(sprintf('%s.%s', $jAlias, $alias));
-            }
-        }
-
-        foreach ($avgCols as $alias => $cols) {
-            $existsCols[$alias] = $cols;
-        }
-
-        $subQuery = $instructionGroup->relation->getRelated()->newQuery();
-
-        if ($instructionGroup->constraints instanceof Closure) {
-            ($instructionGroup->constraints)($subQuery);
-        }
-
-        /** @var literal-string $selects aggregate expressions over grammar-wrapped identifiers */
-        $selects = implode(', ', $subSelects);
-        $subQuery->selectRaw($selects)->groupBy($fk);
-
-        $builder->leftJoinSub($subQuery, $jAlias, sprintf('%s.%s', $jAlias, $fk), '=', $localKey);
     }
 
     /** @param array<string, int> $counters */

@@ -34,7 +34,8 @@
   Arguments, aliases and output keys are unchanged.
 - **Breaking:** the paginators are no longer lazy. `paginateWithAggregates()` and friends run their queries immediately and return Laravel's own paginators (as subclasses) with `aggregates` attached, instead of deferring work until the paginator was read.
 - Depend on `illuminate/database`, `illuminate/pagination` and `illuminate/support` instead of the full `laravel/framework`.
-- Aggregates are now collapsed to a single row inside the database. Previously every row of the base query was hydrated into PHP to compute relation aggregates.
+- Aggregates are computed in one query that returns one row. Previously every row of the base query was hydrated into PHP to compute relation aggregates. HasOne / HasMany / morph aggregates now read only the related rows of matching parents (`fk IN (...)`) instead of grouping the whole related table, and base aggregates no longer re-scan the base table: on 200k parents / 1M children this went from 2–10× slower than equivalent hand-written queries to 0.8–1.3×.
+- `exists` aggregates return `false` instead of `null` when the base query has no rows.
 - `composer.lock` is no longer committed.
 - `laravel/boost` removed from the development dependencies.
 - **Breaking:** aggregate values have the same PHP types on every driver: `count` → `int`, `exists` → `bool`, `sum` → `int|float` (`0` when empty), `avg` → `float|null`. MySQL and PostgreSQL previously returned `SUM()`/`AVG()` as numeric strings. `max`/`min` are returned unchanged.
@@ -45,6 +46,7 @@
 - Wrong paginator `total` for `groupBy()` / `having()` / `distinct()` / union base queries.
 - Base aggregates on `groupBy()` / `having()` / `distinct()` / union queries returned a value for one group (or counted underlying rows). They are now computed over the query's result rows via a derived table.
 - Relation aggregates on grouped queries failed on MySQL and PostgreSQL (`GROUP BY` error). They are now computed per result row and rolled up on every driver.
+- `MorphOne` / `MorphMany` aggregates ignored the morph type and counted related rows of other models with the same id.
 - `withAvg()` on `BelongsTo`, `HasManyThrough` and other non-`HasOneOrMany`/`BelongsToMany` relations threw `BadMethodCallException`.
 
 ### Removed
