@@ -7,8 +7,8 @@ namespace TarranJones\LaravelPaginationAggregates;
 use Closure;
 use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Grammar;
 use InvalidArgumentException;
-use TarranJones\LaravelPaginationAggregates\Resolvers\AggregateResolver;
 use TarranJones\LaravelPaginationAggregates\Resolvers\DerivedTableResolver;
 
 class AggregateCoordinator
@@ -16,12 +16,15 @@ class AggregateCoordinator
     /** @var AggregateInstruction[] */
     private array $instructions = [];
 
-    /** @var array<string, mixed>|null */
-    private ?array $cachedValues = null;
-
     private ?AliasResolver $aliasResolver = null;
 
-    public function __construct(private readonly Builder $builder) {}
+    /**
+     * Collects the aggregate instructions declared on a query with the withAgg*() builder macros.
+     *
+     * Holds only the grammar (for alias generation), never the builder, so it can be stored on the
+     * builder itself and copied when the builder is cloned.
+     */
+    public function __construct(private readonly Grammar $grammar) {}
 
     public function withAggCount(string|array|null $relations = null): static
     {
@@ -85,29 +88,10 @@ class AggregateCoordinator
         );
     }
 
-    /** @return array<string, mixed> */
-    public function resolve(): array
-    {
-        if ($this->cachedValues !== null) {
-            return $this->cachedValues;
-        }
-
-        if ($this->instructions === []) {
-            return $this->cachedValues = [];
-        }
-
-        return $this->cachedValues = (new AggregateResolver)->resolve($this->instructions, $this->builder);
-    }
-
     /** @return AggregateInstruction[] */
     public function instructions(): array
     {
         return $this->instructions;
-    }
-
-    public function builder(): Builder
-    {
-        return $this->builder;
     }
 
     /**
@@ -123,9 +107,9 @@ class AggregateCoordinator
      * Returns false when the base query is grouped, distinct or a union: a COUNT(*) over
      * such a query does not equal the number of paginated rows.
      */
-    public function canDeriveTotalFromAggregates(): bool
+    public function canDeriveTotalFromAggregates(Builder $builder): bool
     {
-        return ! DerivedTableResolver::requiresDerivedTable($this->builder);
+        return ! DerivedTableResolver::requiresDerivedTable($builder);
     }
 
     /**
@@ -156,7 +140,6 @@ class AggregateCoordinator
     public function addPaginatorTotal(string $alias): static
     {
         $this->instructions[] = new AggregateInstruction('count', $alias, '*', null);
-        $this->cachedValues = null;
 
         return $this;
     }
@@ -196,8 +179,6 @@ class AggregateCoordinator
             $function, $alias, $storedColumn, null, $constraint,
         );
 
-        $this->cachedValues = null;
-
         return $this;
     }
 
@@ -233,14 +214,12 @@ class AggregateCoordinator
             );
         }
 
-        $this->cachedValues = null;
-
         return $this;
     }
 
     private function aliasResolver(): AliasResolver
     {
-        return $this->aliasResolver ??= new AliasResolver($this->builder->getQuery()->getGrammar());
+        return $this->aliasResolver ??= new AliasResolver($this->grammar);
     }
 
     /**

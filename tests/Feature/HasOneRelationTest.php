@@ -34,8 +34,8 @@ beforeEach(function (): void {
 
 it('withAggCount on HasOne returns total number of related rows across all parents', function (): void {
     $aggregates = HoUser::query()
-        ->paginateWithAggregates(10)
         ->withAggCount('hoProfile')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     // 2 users have a profile, 1 does not — global count = 2
@@ -44,8 +44,8 @@ it('withAggCount on HasOne returns total number of related rows across all paren
 
 it('withAggMax on HasOne returns the max value across all related rows', function (): void {
     $aggregates = HoUser::query()
-        ->paginateWithAggregates(10)
         ->withAggMax('hoProfile', 'score')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['ho_profile_max_score'])->toBe(80);
@@ -53,8 +53,8 @@ it('withAggMax on HasOne returns the max value across all related rows', functio
 
 it('withAggMin on HasOne returns the min value across all related rows', function (): void {
     $aggregates = HoUser::query()
-        ->paginateWithAggregates(10)
         ->withAggMin('hoProfile', 'score')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['ho_profile_min_score'])->toBe(50);
@@ -62,8 +62,8 @@ it('withAggMin on HasOne returns the min value across all related rows', functio
 
 it('withAggSum on HasOne returns the sum across all related rows', function (): void {
     $aggregates = HoUser::query()
-        ->paginateWithAggregates(10)
         ->withAggSum('hoProfile', 'score')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['ho_profile_sum_score'])->toBe(130);
@@ -71,8 +71,8 @@ it('withAggSum on HasOne returns the sum across all related rows', function (): 
 
 it('withAggAvg on HasOne returns the average across all related rows', function (): void {
     $aggregates = HoUser::query()
-        ->paginateWithAggregates(10)
         ->withAggAvg('hoProfile', 'score')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     // rows: 80, 50 (Carol has no profile, contributes null/0 via LEFT JOIN)
@@ -82,8 +82,8 @@ it('withAggAvg on HasOne returns the average across all related rows', function 
 
 it('withAggExists on HasOne returns true when at least one parent has a related row', function (): void {
     $aggregates = HoUser::query()
-        ->paginateWithAggregates(10)
         ->withAggExists('hoProfile')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['ho_profile_exists'])->toBeTrue();
@@ -93,8 +93,8 @@ it('withAggExists on HasOne returns false when no related rows exist', function 
     HoProfile::query()->delete();
 
     $aggregates = HoUser::query()
-        ->paginateWithAggregates(10)
         ->withAggExists('hoProfile')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['ho_profile_exists'])->toBeFalse();
@@ -102,8 +102,8 @@ it('withAggExists on HasOne returns false when no related rows exist', function 
 
 it('withAggCount on HasOne with a closure constraint counts only matching rows', function (): void {
     $aggregates = HoUser::query()
-        ->paginateWithAggregates(10)
         ->withAggCount(['hoProfile as high_score_count' => fn (Builder $builder): Builder => $builder->where('score', '>', 60)])
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     // Only Alice (score 80) qualifies
@@ -112,9 +112,9 @@ it('withAggCount on HasOne with a closure constraint counts only matching rows',
 
 it('withAggMax and withAggMin on HasOne are batched into a single LEFT JOIN', function (): void {
     $aggregates = HoUser::query()
-        ->paginateWithAggregates(10)
         ->withAggMax('hoProfile', 'score')
         ->withAggMin('hoProfile', 'score')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['ho_profile_max_score'])->toBe(80)

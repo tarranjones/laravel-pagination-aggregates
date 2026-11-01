@@ -37,8 +37,8 @@ it('relation aggregate excludes soft-deleted child rows', function (): void {
     SdComment::query()->where('votes', 5)->first()->delete();
 
     $paginator = SdPost::query()
-        ->paginateWithAggregates(10)
-        ->withAggSum('sdComments', 'votes');
+        ->withAggSum('sdComments', 'votes')
+        ->paginateWithAggregates(10);
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -50,8 +50,8 @@ it('relation count aggregate excludes soft-deleted child rows', function (): voi
     SdComment::query()->where('votes', 5)->first()->delete();
 
     $paginator = SdPost::query()
-        ->paginateWithAggregates(10)
-        ->withAggCount('sdComments');
+        ->withAggCount('sdComments')
+        ->paginateWithAggregates(10);
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -62,8 +62,8 @@ it('base count aggregate excludes soft-deleted parent rows', function (): void {
     SdPost::query()->where('title', 'Second')->first()->delete();
 
     $paginator = SdPost::query()
-        ->paginateWithAggregates(10)
-        ->withAggCount();
+        ->withAggCount()
+        ->paginateWithAggregates(10);
 
     $aggregates = $paginator->toArray()['aggregates'];
 
@@ -74,8 +74,8 @@ it('soft-deleted parent rows are excluded from pagination results', function ():
     SdPost::query()->where('title', 'Second')->first()->delete();
 
     $paginator = SdPost::query()
-        ->paginateWithAggregates(10)
-        ->withAggCount();
+        ->withAggCount()
+        ->paginateWithAggregates(10);
 
     $payload = $paginator->toArray();
 

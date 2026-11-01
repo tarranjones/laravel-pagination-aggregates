@@ -34,8 +34,8 @@ beforeEach(function (): void {
 
 it('withAggAvg on a BelongsTo relation averages across every base row', function (): void {
     $aggregates = Comment::query()
-        ->paginateWithAggregates(10)
         ->withAggAvg('post', 'id')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     // (1 + 1 + 2) / 3
@@ -44,9 +44,9 @@ it('withAggAvg on a BelongsTo relation averages across every base row', function
 
 it('withAggAvg on a BelongsTo relation honours alias and constraint', function (): void {
     $aggregates = Comment::query()
-        ->paginateWithAggregates(10)
         ->withAggAvg(['post as second_post_avg' => fn (Builder $builder): Builder => $builder->where('title', 'Second')], 'id')
         ->withAggCount('post')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['second_post_avg'])->toEqualWithDelta(2.0, 0.001)
@@ -55,10 +55,10 @@ it('withAggAvg on a BelongsTo relation honours alias and constraint', function (
 
 it('BelongsTo max, min and exists roll up across every base row', function (): void {
     $aggregates = Comment::query()
-        ->paginateWithAggregates(1)
         ->withAggMax('post', 'id')
         ->withAggMin('post', 'id')
         ->withAggExists('post')
+        ->paginateWithAggregates(1)
         ->toArray()['aggregates'];
 
     expect($aggregates['post_max_id'])->toBe(2)

@@ -5,9 +5,13 @@ declare(strict_types=1);
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Pagination\CursorPaginator as LaravelCursorPaginator;
+use Illuminate\Pagination\LengthAwarePaginator as LaravelLengthAwarePaginator;
+use Illuminate\Pagination\Paginator as LaravelPaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
+use TarranJones\LaravelPaginationAggregates\Pagination\LengthAwarePaginator;
 use Tests\Fixtures\Models\Comment;
 use Tests\Fixtures\Models\Post;
 
@@ -31,53 +35,50 @@ beforeEach(function (): void {
     }
 });
 
-// ─── Deferred state is populated on first read ───────────────────────────────
+// ─── The paginator behaves exactly like Laravel's ────────────────────────────
 
-it('length-aware paginator exposes items and totals before serialization', function (): void {
-    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(5)->withAggCount('comments');
+it('length-aware paginator exposes items and totals', function (): void {
+    $paginator = Post::query()->orderBy('id')->withAggCount('comments')->paginateWithAggregates(5);
 
-    expect($paginator->count())->toBe(5)
+    expect($paginator)->toBeInstanceOf(LaravelLengthAwarePaginator::class)
+        ->and($paginator->count())->toBe(5)
         ->and($paginator->total())->toBe(12)
         ->and($paginator->lastPage())->toBe(3)
         ->and($paginator->items())->toHaveCount(5)
         ->and(iterator_to_array($paginator))->toHaveCount(5)
-        ->and($paginator->toArray()['aggregates']['comments_count'])->toBe(12);
+        ->and($paginator->aggregates['comments_count'])->toBe(12);
 });
 
-it('simple paginator exposes items and hasMorePages before serialization', function (): void {
-    $paginator = Post::query()->orderBy('id')->simplePaginateWithAggregates(5)->withAggCount('comments');
+it('simple paginator exposes items and hasMorePages', function (): void {
+    $paginator = Post::query()->orderBy('id')->withAggCount('comments')->simplePaginateWithAggregates(5);
 
-    expect($paginator->count())->toBe(5)
+    expect($paginator)->toBeInstanceOf(LaravelPaginator::class)
+        ->and($paginator->count())->toBe(5)
         ->and($paginator->hasMorePages())->toBeTrue();
 });
 
-it('cursor paginator exposes items and next cursor before serialization', function (): void {
-    $paginator = Post::query()->orderBy('id')->cursorPaginateWithAggregates(5)->withAggCount('comments');
+it('cursor paginator keeps hasMore and item order when navigating back', function (): void {
+    $first = Post::query()->orderBy('id')->withAggCount('comments')->cursorPaginateWithAggregates(5);
+    $second = Post::query()->orderBy('id')->cursorPaginateWithAggregates(5, cursor: $first->nextCursor());
+    $back = Post::query()->orderBy('id')->withAggCount('comments')->cursorPaginateWithAggregates(5, cursor: $second->previousCursor());
 
-    expect($paginator->count())->toBe(5)
-        ->and($paginator->hasMorePages())->toBeTrue()
-        ->and($paginator->nextCursor())->not->toBeNull();
+    expect($first)->toBeInstanceOf(LaravelCursorPaginator::class)
+        ->and($first->hasMorePages())->toBeTrue()
+        ->and($second->pluck('id')->all())->toBe([6, 7, 8, 9, 10])
+        ->and($back->pluck('id')->all())->toBe([1, 2, 3, 4, 5])
+        ->and($back->aggregates['comments_count'])->toBe(12);
 });
 
 it('through() transforms the paginated items', function (): void {
-    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(2)->withAggCount('comments');
+    $paginator = Post::query()->orderBy('id')->withAggCount('comments')->paginateWithAggregates(2);
 
     $paginator->through(fn (Post $post): array => ['title' => $post->title]);
 
     expect($paginator->toArray()['data'])->toBe([['title' => 'Post 1'], ['title' => 'Post 2']]);
 });
 
-it('setCollection() before initialization is preserved', function (): void {
-    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(5);
-
-    $paginator->setCollection(collect(['replaced']));
-
-    expect($paginator->toArray()['data'])->toBe(['replaced'])
-        ->and($paginator->total())->toBe(12);
-});
-
 it('JsonResource::collection receives the page data and aggregates', function (): void {
-    $paginator = Post::query()->orderBy('id')->paginateWithAggregates(5)->withAggCount('comments');
+    $paginator = Post::query()->orderBy('id')->withAggCount('comments')->paginateWithAggregates(5);
 
     $response = JsonResource::collection($paginator)->response()->getData(true);
 
@@ -86,10 +87,10 @@ it('JsonResource::collection receives the page data and aggregates', function ()
         ->and($response['meta']['aggregates']['comments_count'])->toBe(12);
 });
 
-it('the pagination query runs only once across multiple reads', function (): void {
-    DB::enableQueryLog();
+it('reading the paginator runs no further queries', function (): void {
+    $paginator = Post::query()->withAggCount('comments')->paginateWithAggregates(5);
 
-    $paginator = Post::query()->paginateWithAggregates(5)->withAggCount('comments');
+    DB::enableQueryLog();
     $paginator->count();
     $paginator->total();
     $paginator->toArray();
@@ -97,15 +98,58 @@ it('the pagination query runs only once across multiple reads', function (): voi
     $queries = DB::getQueryLog();
     DB::disableQueryLog();
 
-    expect($queries)->toHaveCount(3);
+    expect($queries)->toBe([]);
 });
 
-it('protected paginator properties remain inaccessible from outside', function (): void {
+it('withAgg*() methods are not available on the paginator', function (): void {
     $paginator = Post::query()->paginateWithAggregates(5);
 
-    $paginator->toArray();
+    expect(fn () => $paginator->withAggCount('comments'))->toThrow(BadMethodCallException::class);
+});
 
-    expect(fn () => $paginator->items)->toThrow(Error::class);
+// ─── Aggregates declared on the query ────────────────────────────────────────
+
+it('applies constraints added to the query after withAgg*()', function (): void {
+    $aggregates = Post::query()
+        ->withAggCount()
+        ->withAggCount('comments')
+        ->where('id', '<=', 3)
+        ->paginateWithAggregates(5)
+        ->aggregates;
+
+    expect($aggregates)->toBe(['count' => 3, 'comments_count' => 3]);
+});
+
+it('gives a cloned query its own copy of the aggregates', function (): void {
+    $original = Post::query()->withAggCount();
+    $clone = (clone $original)->withAggCount('comments');
+    $original->withAggMax('id');
+
+    expect($original->paginateWithAggregates(5)->aggregates)->toBe(['count' => 12, 'max_id' => 12])
+        ->and($clone->paginateWithAggregates(5)->aggregates)->toBe(['count' => 12, 'comments_count' => 12]);
+});
+
+it('keeps aggregates through clones of clones', function (): void {
+    $base = Post::query()->withAggCount();
+    $child = (clone $base)->withAggMax('id');
+    $grandchild = clone $child;
+
+    expect($grandchild->paginateWithAggregates(5)->aggregates)->toBe(['count' => 12, 'max_id' => 12])
+        ->and($base->paginateWithAggregates(5)->aggregates)->toBe(['count' => 12]);
+});
+
+it("ignores declared aggregates for Laravel's own paginate()", function (): void {
+    $paginator = Post::query()->withAggCount('comments')->paginate(5);
+
+    expect($paginator)->not->toBeInstanceOf(LengthAwarePaginator::class)
+        ->and($paginator->toArray())->not->toHaveKey('aggregates');
+});
+
+it('returns an empty aggregates array when none are declared', function (): void {
+    $paginator = Post::query()->paginateWithAggregates(5);
+
+    expect($paginator->aggregates)->toBe([])
+        ->and($paginator->toArray())->not->toHaveKey('aggregates');
 });
 
 // ─── Aggregate query does not load the full result set into PHP ─────────────
@@ -117,10 +161,10 @@ it('relation aggregates hydrate only the current page of models', function (): v
     });
 
     $aggregates = Post::query()
-        ->paginateWithAggregates(5)
         ->withAggCount('comments')
         ->withAggSum('comments', 'votes')
         ->withAggMax('id')
+        ->paginateWithAggregates(5)
         ->toArray()['aggregates'];
 
     expect($hydrated)->toBe(5)
@@ -137,11 +181,12 @@ it('grouped base queries keep the correct paginator total', function (): void {
     Comment::query()->create(['post_id' => 1, 'votes' => 100]);
 
     $paginator = Comment::query()
-        ->select('post_id')
+        ->selectRaw('post_id, MAX(votes) AS top_votes')
         ->groupBy('post_id')
-        ->paginateWithAggregates(5)
-        ->withAggMax('votes');
+        ->withAggMax('top_votes')
+        ->paginateWithAggregates(5);
 
     expect($paginator->total())->toBe(12)
-        ->and($paginator->count())->toBe(5);
+        ->and($paginator->count())->toBe(5)
+        ->and((int) $paginator->aggregates['max_top_votes'])->toBe(100);
 });

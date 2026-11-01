@@ -59,7 +59,7 @@ function unitsByStatus(): Builder
 }
 
 it('counts groups, not underlying rows', function (): void {
-    $paginator = unitsByStatus()->paginateWithAggregates(2)->withAggCount();
+    $paginator = unitsByStatus()->withAggCount()->paginateWithAggregates(2);
 
     expect($paginator->toArray()['aggregates']['count'])->toBe(3)
         ->and($paginator->total())->toBe(3);
@@ -67,11 +67,11 @@ it('counts groups, not underlying rows', function (): void {
 
 it('aggregates a column selected by the grouped query', function (): void {
     $aggregates = unitsByStatus()
-        ->paginateWithAggregates(2)
         ->withAggSum('units')
         ->withAggMax('units')
         ->withAggMin('units')
         ->withAggAvg('units')
+        ->paginateWithAggregates(2)
         ->toArray()['aggregates'];
 
     expect($aggregates['sum_units'])->toBe(10)
@@ -83,9 +83,9 @@ it('aggregates a column selected by the grouped query', function (): void {
 it('respects HAVING', function (): void {
     $aggregates = unitsByStatus()
         ->havingRaw('SUM(quantity) > 3')
-        ->paginateWithAggregates(10)
         ->withAggCount()
         ->withAggSum('units')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     // paid (5) and pending (4)
@@ -95,12 +95,12 @@ it('respects HAVING', function (): void {
 
 it('applies constraints before grouping', function (): void {
     $aggregates = unitsByStatus()
-        ->paginateWithAggregates(10)
         ->withAggCount([
             'as paid_groups' => fn (Builder $builder): Builder => $builder->where('status', 'paid'),
             'as large_order_groups' => fn (Builder $builder): Builder => $builder->where('quantity', '>=', 3),
         ])
         ->withAggExists(['as has_refunds' => fn (Builder $builder): Builder => $builder->where('status', 'refunded')])
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['paid_groups'])->toBe(1)
@@ -112,9 +112,9 @@ it('aggregates distinct rows', function (): void {
     $aggregates = Order::query()
         ->select('status')
         ->distinct()
-        ->paginateWithAggregates(10)
         ->withAggCount()
         ->withAggExists()
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['count'])->toBe(3)
@@ -125,8 +125,8 @@ it('resolves qualified column names against the distinct result', function (): v
     $aggregates = Order::query()
         ->select('status', 'quantity')
         ->distinct()
-        ->paginateWithAggregates(10)
         ->withAggSum('orders.quantity')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['sum_orders_quantity'])->toBe(10);
@@ -137,9 +137,9 @@ it('aggregates union rows', function (): void {
         ->select('id', 'quantity')
         ->where('status', 'paid')
         ->union(Order::query()->select('id', 'quantity')->where('status', 'shipped'))
-        ->paginateWithAggregates(10)
         ->withAggCount()
         ->withAggSum('quantity')
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates['count'])->toBe(3)
@@ -149,11 +149,11 @@ it('aggregates union rows', function (): void {
 it('returns empty defaults when no groups match', function (): void {
     $aggregates = unitsByStatus()
         ->where('status', 'refunded')
-        ->paginateWithAggregates(10)
         ->withAggCount()
         ->withAggSum('units')
         ->withAggAvg('units')
         ->withAggExists()
+        ->paginateWithAggregates(10)
         ->toArray()['aggregates'];
 
     expect($aggregates)->toBe([
@@ -165,7 +165,7 @@ it('returns empty defaults when no groups match', function (): void {
 });
 
 it('keeps page data and total correct alongside aggregates', function (): void {
-    $payload = unitsByStatus()->paginateWithAggregates(2, page: 2)->withAggSum('units')->toArray();
+    $payload = unitsByStatus()->withAggSum('units')->paginateWithAggregates(2, page: 2)->toArray();
 
     expect($payload['total'])->toBe(3)
         ->and($payload['data'])->toHaveCount(1)
@@ -179,9 +179,9 @@ it('computes BelongsTo aggregates per group', function (): void {
     $aggregates = Comment::query()
         ->select('post_id')
         ->groupBy('post_id')
-        ->paginateWithAggregates(1)
         ->withAggCount('post')
         ->withAggMax('post', 'id')
+        ->paginateWithAggregates(1)
         ->toArray()['aggregates'];
 
     expect($aggregates['post_count'])->toBe(2)
@@ -192,10 +192,10 @@ it('computes HasMany aggregates per group', function (): void {
     $aggregates = Post::query()
         ->select('id', 'title')
         ->groupBy('id', 'title')
-        ->paginateWithAggregates(1)
         ->withAggCount('comments')
         ->withAggSum('comments', 'votes')
         ->withAggAvg('comments', 'votes')
+        ->paginateWithAggregates(1)
         ->toArray()['aggregates'];
 
     expect($aggregates['comments_count'])->toBe(3)
@@ -206,9 +206,9 @@ it('computes HasMany aggregates per group', function (): void {
 it('computes relation aggregates for distinct queries', function (): void {
     $aggregates = Post::query()
         ->distinct()
-        ->paginateWithAggregates(1)
         ->withAggCount('comments')
         ->withAggExists('comments')
+        ->paginateWithAggregates(1)
         ->toArray()['aggregates'];
 
     expect($aggregates['comments_count'])->toBe(3)
@@ -219,10 +219,10 @@ it('mixes base and relation aggregates on a grouped query, in declaration order'
     $aggregates = Comment::query()
         ->selectRaw('post_id, SUM(votes) AS votes_per_post')
         ->groupBy('post_id')
-        ->paginateWithAggregates(1)
         ->withAggCount('post')
         ->withAggCount()
         ->withAggMax('votes_per_post')
+        ->paginateWithAggregates(1)
         ->toArray()['aggregates'];
 
     // max/min are returned as the driver gives them (MySQL returns MAX(SUM(...)) as a decimal string).

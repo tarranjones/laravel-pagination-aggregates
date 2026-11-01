@@ -9,9 +9,17 @@
 - CI runs the full suite against MySQL 8.4, MariaDB 11.4 and PostgreSQL 17 on Laravel 12 and 13.
 
 ### Changed
-- **Breaking:** paginator aggregate methods are renamed so they can't be mistaken for Eloquent's per-row `withCount()` family:
+- **Breaking:** aggregates are declared on the query, before paginating, with methods renamed so they can't be mistaken for Eloquent's per-row `withCount()` family:
 
-  | Before | After |
+  ```php
+  // 1.x
+  Post::query()->paginateWithAggregates(15)->withCount('comments');
+
+  // 2.0
+  Post::query()->withAggCount('comments')->paginateWithAggregates(15);
+  ```
+
+  | 1.x (on the paginator) | 2.0 (on the query) |
   |---|---|
   | `withCount()` | `withAggCount()` |
   | `withSum()` | `withAggSum()` |
@@ -19,17 +27,17 @@
   | `withMin()` | `withAggMin()` |
   | `withAvg()` | `withAggAvg()` |
   | `withExists()` | `withAggExists()` |
-  | `aggregate()` | `resolveAggregates()` |
+  | `aggregate()` | removed: `$paginator->aggregates` is populated when the paginator is returned |
 
   Arguments, aliases and output keys are unchanged.
+- **Breaking:** the paginators are no longer lazy. `paginateWithAggregates()` and friends run their queries immediately and return Laravel's own paginators (as subclasses) with `aggregates` attached, instead of deferring work until the paginator was read.
 - Depend on `illuminate/database`, `illuminate/pagination` and `illuminate/support` instead of the full `laravel/framework`.
 - Aggregates are now collapsed to a single row inside the database. Previously every row of the base query was hydrated into PHP to compute relation aggregates.
-- Pagination state is initialised on first read, not only on serialization.
 - `composer.lock` is no longer committed.
 - **Breaking:** aggregate values have the same PHP types on every driver: `count` → `int`, `exists` → `bool`, `sum` → `int|float` (`0` when empty), `avg` → `float|null`. MySQL and PostgreSQL previously returned `SUM()`/`AVG()` as numeric strings. `max`/`min` are returned unchanged.
 
 ### Fixed
-- `items()`, `total()`, `count()`, iteration, `through()` and `JsonResource::collection()` returned empty data until the paginator was serialized.
+- `items()`, `total()`, `count()`, iteration, `through()` and `JsonResource::collection()` returned empty data until the paginator was serialized (fixed by removing laziness altogether).
 - Base aggregates failed on PostgreSQL when the query had an `orderBy()` (the `ORDER BY` leaked into the aggregate subquery).
 - Wrong paginator `total` for `groupBy()` / `having()` / `distinct()` / union base queries.
 - Base aggregates on `groupBy()` / `having()` / `distinct()` / union queries returned a value for one group (or counted underlying rows). They are now computed over the query's result rows via a derived table.

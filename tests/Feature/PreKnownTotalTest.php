@@ -62,13 +62,13 @@ it('pre-known total with no aggregates fires only the paginate SELECT', function
 it('pre-known total that does not fit on one page skips COUNT injection but still fires aggregate query', function (): void {
     // 3 rows, 1 per page → does not fit. withAggSum still needs DB, but no __paginator_total injected.
     $queries = captureQueriesFor(function (): void {
-        Comment::query()->paginateWithAggregates(1, total: 3)->withAggSum('votes')->toArray();
+        Comment::query()->withAggSum('votes')->paginateWithAggregates(1, total: 3)->toArray();
     });
 
     expect($queries)->toHaveCount(2);
 
-    // The paginate SELECT fires first (index 0); the CROSS JOIN aggregate is index 1.
-    $aggregateSql = $queries[1]['query'];
+    // The aggregate query fires first (index 0); the paginate SELECT is index 1.
+    $aggregateSql = $queries[0]['query'];
     expect($aggregateSql)->not->toContain('__paginator_total');
     expect(strtolower((string) $aggregateSql))->toContain('sum');
 });
@@ -76,13 +76,13 @@ it('pre-known total that does not fit on one page skips COUNT injection but stil
 it('pre-known total that fits on one page fires only one query for purely collection-computable aggregates', function (): void {
     $queries = captureQueriesFor(function (): void {
         Comment::query()
-            ->paginateWithAggregates(15, total: 3)
             ->withAggSum('votes')
             ->withAggMax('votes')
             ->withAggMin('votes')
             ->withAggAvg('votes')
             ->withAggCount()
             ->withAggExists()
+            ->paginateWithAggregates(15, total: 3)
             ->toArray();
     });
 
@@ -92,8 +92,8 @@ it('pre-known total that fits on one page fires only one query for purely collec
 it('Expression column aggregate falls back to DB even when fits on one page', function (): void {
     $queries = captureQueriesFor(function (): void {
         Comment::query()
-            ->paginateWithAggregates(15, total: 3)
             ->withAggMax(DB::raw('votes'))
+            ->paginateWithAggregates(15, total: 3)
             ->toArray();
     });
 
@@ -103,8 +103,8 @@ it('Expression column aggregate falls back to DB even when fits on one page', fu
 it('constrained base aggregate still fires DB query when fits on one page', function (): void {
     $queries = captureQueriesFor(function (): void {
         Comment::query()
-            ->paginateWithAggregates(15, total: 3)
             ->withAggSum(['as high_sum' => fn ($b) => $b->where('votes', '>', 3)], 'votes')
+            ->paginateWithAggregates(15, total: 3)
             ->toArray();
     });
 
@@ -114,8 +114,8 @@ it('constrained base aggregate still fires DB query when fits on one page', func
 it('relation aggregate still fires DB query when fits on one page', function (): void {
     $queries = captureQueriesFor(function (): void {
         Post::query()
-            ->paginateWithAggregates(15, total: 2)
             ->withAggCount('comments')
+            ->paginateWithAggregates(15, total: 2)
             ->toArray();
     });
 
@@ -125,9 +125,9 @@ it('relation aggregate still fires DB query when fits on one page', function ():
 it('mix of collection-computable and relation aggregate fires DB, collection overrides computable result', function (): void {
     $queries = captureQueriesFor(function (): void {
         Post::query()
-            ->paginateWithAggregates(15, total: 2)
             ->withAggSum('id')
             ->withAggCount('comments')
+            ->paginateWithAggregates(15, total: 2)
             ->toArray();
     });
 
@@ -140,11 +140,11 @@ it('total=0 fires no DB queries — Laravel skips the SELECT for empty results',
 
     $queries = captureQueriesFor(function (): void {
         Comment::query()
-            ->paginateWithAggregates(15, total: 0)
             ->withAggSum('votes')
             ->withAggMax('votes')
             ->withAggCount()
             ->withAggExists()
+            ->paginateWithAggregates(15, total: 0)
             ->toArray();
     });
 
@@ -156,7 +156,7 @@ it('total=0 fires no DB queries — Laravel skips the SELECT for empty results',
 it('total exactly equal to perPage uses the collection path (boundary)', function (): void {
     // 3 comments, perPage=3, total=3 → 3 <= 3 → fits.
     $queries = captureQueriesFor(function (): void {
-        Comment::query()->paginateWithAggregates(3, total: 3)->withAggSum('votes')->toArray();
+        Comment::query()->withAggSum('votes')->paginateWithAggregates(3, total: 3)->toArray();
     });
 
     expect($queries)->toHaveCount(1);
@@ -164,7 +164,7 @@ it('total exactly equal to perPage uses the collection path (boundary)', functio
 
 it('restricted columns with fits-on-one-page merges aggregate column into SELECT', function (): void {
     $queries = captureQueriesFor(function (): void {
-        Comment::query()->paginateWithAggregates(15, ['id'], total: 3)->withAggSum('votes')->toArray();
+        Comment::query()->withAggSum('votes')->paginateWithAggregates(15, ['id'], total: 3)->toArray();
     });
 
     // Only 1 query (paginate SELECT), and that query must include the votes column.
@@ -174,7 +174,7 @@ it('restricted columns with fits-on-one-page merges aggregate column into SELECT
 
 it('without pre-known total the original CROSS JOIN behaviour is unchanged', function (): void {
     $queries = captureQueriesFor(function (): void {
-        Comment::query()->paginateWithAggregates(5)->withAggSum('votes')->toArray();
+        Comment::query()->withAggSum('votes')->paginateWithAggregates(5)->toArray();
     });
 
     // CROSS JOIN aggregate (with __paginator_total) + paginate SELECT = 2 queries.
@@ -187,13 +187,13 @@ it('without pre-known total the original CROSS JOIN behaviour is unchanged', fun
 it('collection-computed aggregates return correct values when fits on one page', function (): void {
     // Votes: 3, 5, 2 → sum=10, max=5, min=2, avg=10/3, count=3, exists=true
     $payload = Comment::query()
-        ->paginateWithAggregates(15, total: 3)
         ->withAggSum('votes')
         ->withAggMax('votes')
         ->withAggMin('votes')
         ->withAggAvg('votes')
         ->withAggCount()
         ->withAggExists()
+        ->paginateWithAggregates(15, total: 3)
         ->toArray();
 
     expect($payload['aggregates']['sum_votes'])->toBe(10)
@@ -208,11 +208,11 @@ it('collection-computed count on empty set returns zero', function (): void {
     Comment::query()->delete();
 
     $payload = Comment::query()
-        ->paginateWithAggregates(15, total: 0)
         ->withAggCount()
         ->withAggExists()
         ->withAggSum('votes')
         ->withAggMax('votes')
+        ->paginateWithAggregates(15, total: 0)
         ->toArray();
 
     expect($payload['aggregates']['count'])->toBe(0)
@@ -231,8 +231,8 @@ it('pre-known total is reflected in toArray total and last_page', function (): v
 
 it('__paginator_total alias is never exposed in aggregates when total is pre-known', function (): void {
     $payload = Comment::query()
-        ->paginateWithAggregates(5, total: 3)
         ->withAggSum('votes')
+        ->paginateWithAggregates(5, total: 3)
         ->toArray();
 
     expect($payload['aggregates'])->not->toHaveKey('__paginator_total');
@@ -243,9 +243,9 @@ it('mix of collection-computable and relation aggregate returns correct values f
     // total comments count = 3.
     $payload = Post::query()
         ->orderBy('id')
-        ->paginateWithAggregates(15, total: 2)
         ->withAggSum('id')
         ->withAggCount('comments')
+        ->paginateWithAggregates(15, total: 2)
         ->toArray();
 
     expect($payload['aggregates']['sum_id'])->toBe(3)
