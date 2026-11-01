@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  # Run by hand to (re)publish to Packagist without cutting a new release.
+  workflow_dispatch:
 
 jobs:
   tests:
@@ -12,6 +14,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     needs: tests
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
 
@@ -26,17 +29,66 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           BODY=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          echo "$BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.changelog.outputs.body }}
 
-      - name: Update Packagist
+  packagist:
+    runs-on: ubuntu-latest
+    needs: [tests, release]
+    # Also runs on workflow_dispatch, where the release job is skipped.
+    if: ${{ !failure() && !cancelled() }}
+
+    name: Publish to Packagist
+
+    steps:
+      - name: Update or create the Packagist package
+        env:
+          PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
+          REPOSITORY_URL: https://github.com/${{ github.repository }}
         run: |
-          curl -XPOST -H 'content-type:application/json' \
-            'https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_TOKEN }}' \
-            -d '{"repository":{"url":"https://github.com/${{ github.repository }}"}}'
+          set -euo pipefail
+
+          if [ -z "${PACKAGIST_USERNAME}" ] || [ -z "${PACKAGIST_TOKEN}" ]; then
+            echo "::error::Set the PACKAGIST_USERNAME and PACKAGIST_TOKEN repository secrets (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+          packagist() {
+            curl -sS -X POST "https://packagist.org/api/$1" \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer ${PACKAGIST_USERNAME}:${PACKAGIST_TOKEN}" \
+              -H "User-Agent: ${GITHUB_REPOSITORY} release workflow" \
+              -d "$(jq -cn --arg url "${REPOSITORY_URL}" '{repository: $url}')"
+          }
+
+          response="$(packagist update-package)"
+
+          if [ "$(jq -r '.status // empty' <<< "${response}" 2> /dev/null)" = "success" ]; then
+            echo "Packagist update queued for ${REPOSITORY_URL}."
+            exit 0
+          fi
+
+          if jq -e '.message // "" | test("Could not find a package")' <<< "${response}" > /dev/null 2>&1; then
+            echo "Package is not on Packagist yet; creating it."
+            response="$(packagist create-package)"
+
+            if [ "$(jq -r '.status // empty' <<< "${response}" 2> /dev/null)" = "success" ]; then
+              echo "Created the Packagist package for ${REPOSITORY_URL}."
+              exit 0
+            fi
+
+            echo "::error::Packagist create-package failed (creating a package needs the MAIN API token, not the SAFE one): ${response}"
+            exit 1
+          fi
+
+          echo "::error::Packagist update-package failed: ${response}"
+          exit 1
