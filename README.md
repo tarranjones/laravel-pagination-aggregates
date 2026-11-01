@@ -252,6 +252,25 @@ Post::query()
     ->withAggCount('comments');        // total comment count
 ```
 
+### Grouped, distinct and union queries
+
+For `groupBy()`, `having()`, `distinct()` and `union()` queries, aggregates are computed over the rows the paginator returns, across all pages: one row per group, distinct value or union row.
+
+```php
+Order::query()
+    ->selectRaw('status, SUM(quantity) AS units')
+    ->groupBy('status')
+    ->paginateWithAggregates(10)
+    ->withAggCount()          // number of status groups
+    ->withAggSum('units')     // sum of the selected `units` column across all groups
+    ->withAggMax('units');    // largest group
+```
+
+- Base aggregates take a column **of the query's result**, such as a selected alias like `units`. A qualified name such as `orders.quantity` resolves to the result column `quantity`.
+- Constraint closures (`['as paid' => fn ($q) => $q->where(...)]`) are applied to the query before grouping.
+- Relation aggregates are computed for each result row and then rolled up, so the query must select the columns the relation uses (for example `post_id` for a `post()` relation, or `id` for `comments()`).
+- The paginator `total` comes from Laravel's own count query.
+
 ## SQL reference
 
 ### Single base aggregate — scalar query (no JOIN)
@@ -333,7 +352,6 @@ LIMIT 1
 - Tested on SQLite, MySQL 8.4, MariaDB 11.4 and PostgreSQL 17.
 - When the base query returns no rows, relation aggregates return `0` for count/sum and `null` for max/min/avg/exists.
 - Pagination queries are deferred until the paginator is first read.
-- For `groupBy()`, `having()`, `distinct()` or union base queries the paginator `total` is always computed by Laravel's own count query. Base-query aggregates (`withAggCount()`, `withAggSum('column')`, …) on grouped queries are evaluated per group and are not supported; relation aggregates are unaffected.
 
 ## Testing
 

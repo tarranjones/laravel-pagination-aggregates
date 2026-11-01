@@ -9,6 +9,7 @@ use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
 use InvalidArgumentException;
 use TarranJones\LaravelPaginationAggregates\Resolvers\AggregateResolver;
+use TarranJones\LaravelPaginationAggregates\Resolvers\DerivedTableResolver;
 
 class AggregateCoordinator
 {
@@ -124,12 +125,7 @@ class AggregateCoordinator
      */
     public function canDeriveTotalFromAggregates(): bool
     {
-        $query = $this->builder->getQuery();
-
-        return empty($query->groups)
-            && empty($query->havings)
-            && empty($query->unions)
-            && $query->distinct === false;
+        return ! DerivedTableResolver::requiresDerivedTable($this->builder);
     }
 
     /**
